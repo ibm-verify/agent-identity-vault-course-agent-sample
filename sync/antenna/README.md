@@ -74,7 +74,7 @@ When an agent lifecycle event occurs (create, update, or delete), IBM Verify fir
 - Hosts the **Antenna Transmitter** that publishes agent lifecycle events to the Antenna Bus.
 - Maintains full audit trail of all agent registration and policy changes.
 
-> 📖 **Reference:** [IBM Agent Identity documentation](https://ibmdocs-test.dcs.ibm.com/docs/en/agent-identity)
+> 📖 **Reference:** [IBM Agent Identity documentation](https://www.ibm.com/docs/agent-identity)
 
 ---
 
@@ -119,7 +119,7 @@ When the Antenna Receiver processes an `agent.created` event, it makes three seq
 2. **Create Entity Alias** — binds the agent's JWT `sub` claim (issued by IBM Verify) to the Vault entity using the JWT auth method mount.
 3. **Attach Policies** — grants the entity least-privileged read access to its designated secret paths under `secret/agents/<agent-id>/`.
 
-For `agent.updated` and `agent.deleted` events, Vault resources are updated or cleaned up accordingly (see [Section 4 — Event Mapping](#4-event-mapping)).
+For `agent.updated` and `agent.deleted` events, Vault resources are updated or cleaned up accordingly.
 
 **Key capabilities relevant to this sync:**
 
