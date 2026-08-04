@@ -1,0 +1,18 @@
+{
+  "schemas": ["urn:ietf:params:scim:schemas:core:ibm:2.0:Agent"],
+  "displayName": "Agent for UC1",
+  "description": "Course Portal",
+  "activationDate": "2026-06-25T00:00:00Z",
+  "expirationDate": "2028-12-01T00:00:00Z",
+  "owners": [
+    {
+      "value": "3250007A8M",
+      "type": "User",
+      "$ref": "https://ibadapters.dev.verify.ibmcloudsecurity.com//ui/admin/directory/users-and-groups/users/3250007A8M"
+    }
+  ],
+  "oauthClients": [],
+  "permissions": [],
+  "status": "DRAFT",
+  "tags": ["Search"]
+}

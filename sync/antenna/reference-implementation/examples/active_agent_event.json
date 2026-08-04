@@ -1,0 +1,22 @@
+{
+  "action": "updated",
+  "resource": {
+    "schemas": ["urn:ietf:params:scim:schemas:core:ibm:2.0:Agent"],
+    "id": "agent-uc1-001",
+    "displayName": "Agent for UC1",
+    "description": "Course Portal",
+    "activationDate": "2026-06-25T00:00:00Z",
+    "expirationDate": "2028-12-01T00:00:00Z",
+    "owners": [{"value": "8120080WQQ", "type": "User"}],
+    "oauthClients": [
+      {
+        "issuer": "https://ibadapters.dev.verify.ibmcloudsecurity.com/ui/admin/application/8932aeb8-7d9a-49be-8984-1f17e33bac2a",
+        "clientId": "8932aeb8-7d9a-49be-8984-1f17e33bac2a",
+        "purposes": ["agent_id", "authentication"]
+      }
+    ],
+    "permissions": [],
+    "status": "ACTIVE",
+    "tags": ["courses"]
+  }
+}

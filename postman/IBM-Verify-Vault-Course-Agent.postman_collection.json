@@ -1,0 +1,361 @@
+{
+  "info": {
+    "name": "IBM Verify + Vault Course Agent Tool Credential Demo",
+    "_postman_id": "d6c1b47b-3d4d-4f3d-9de9-course-agent-demo",
+    "description": "Run after completing the numbered cookbook. Uses a dedicated OIDC Token Exchange application, Vault audience validation, vault:path_access RAR, and Vault Agent Registry.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 - Read First",
+      "item": [
+        {
+          "name": "Verify OIDC Discovery",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{verify_issuer}}/.well-known/openid-configuration",
+              "host": [
+                "{{verify_issuer}}"
+              ],
+              "path": [
+                ".well-known",
+                "openid-configuration"
+              ]
+            },
+            "description": "Confirms the IBM Verify issuer and endpoint metadata."
+          }
+        },
+        {
+          "name": "Vault Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{vault_addr}}/v1/sys/health",
+              "host": [
+                "{{vault_addr}}"
+              ],
+              "path": [
+                "v1",
+                "sys",
+                "health"
+              ]
+            },
+            "description": "Vault health check. The API-key use case must first pass the repository compatibility gate."
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 - IBM Verify Actor",
+      "item": [
+        {
+          "name": "Get Course Assistant Actor Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{verify_token_url}}",
+              "host": [
+                "{{verify_token_url}}"
+              ]
+            },
+            "description": "Uses the Actor OIDC application associated with the Course Assistant. The returned token determines the actor identity.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{actor_client_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{actor_client_secret}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200',()=>pm.response.to.have.status(200));",
+                  "const j=pm.response.json();",
+                  "pm.environment.set('actor_token',j.access_token);",
+                  "function dec(t){const p=t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');return JSON.parse(atob(p));}",
+                  "try{const c=dec(j.access_token); console.log('Actor safe claims', {iss:c.iss,sub:c.sub,client_id:c.client_id,aud:c.aud});}catch(e){}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 - IBM Verify Subject",
+      "item": [
+        {
+          "name": "Subject Token Setup Guide \u2014 Authorization Code + PKCE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{verify_issuer}}/.well-known/openid-configuration",
+              "host": [
+                "{{verify_issuer}}"
+              ],
+              "path": [
+                ".well-known",
+                "openid-configuration"
+              ]
+            },
+            "description": "Obtain a fresh human subject access token before token exchange.\n\nRecommended: run the Course Portal login flow and copy the resulting subject access token into the `subject_token` environment variable for troubleshooting.\n\nPostman OAuth 2.0 helper option:\n1. Add `https://oauth.pstmn.io/v1/callback` as an allowed redirect URI on the Course Portal subject OIDC application.\n2. Authorization URL: `{{verify_issuer}}/authorize`\n3. Access Token URL: `{{verify_token_url}}`\n4. Client ID: `{{subject_client_id}}`\n5. Client Secret: `{{subject_client_secret}}`\n6. Grant Type: Authorization Code\n7. Callback URL: `{{subject_redirect_uri}}`\n8. Scope: `openid profile email`\n9. PKCE: enabled, S256\n10. After Postman obtains the token, copy the access token into `subject_token`.\n\nDecode the subject JWT and verify `sub` identifies the human and `may_act` correlates with the Course Assistant actor before continuing."
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - OBO Token Exchange",
+      "item": [
+        {
+          "name": "Exchange Subject + Actor for Delegated JWT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{verify_token_url}}",
+              "host": [
+                "{{verify_token_url}}"
+              ]
+            },
+            "description": "Paste a fresh Authorization Code + PKCE subject access token into subject_token first. This request authenticates with the Course Vault Token Exchange OIDC application.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "urn:ietf:params:oauth:grant-type:token-exchange",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{token_exchange_client_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{token_exchange_client_secret}}",
+                  "type": "text"
+                },
+                {
+                  "key": "subject_token",
+                  "value": "{{subject_token}}",
+                  "type": "text"
+                },
+                {
+                  "key": "subject_token_type",
+                  "value": "urn:ietf:params:oauth:token-type:access_token",
+                  "type": "text"
+                },
+                {
+                  "key": "actor_token",
+                  "value": "{{actor_token}}",
+                  "type": "text"
+                },
+                {
+                  "key": "actor_token_type",
+                  "value": "urn:ietf:params:oauth:token-type:access_token",
+                  "type": "text"
+                },
+                {
+                  "key": "requested_token_type",
+                  "value": "urn:ietf:params:oauth:token-type:access_token",
+                  "type": "text"
+                },
+                {
+                  "key": "authorization_details",
+                  "value": "[{\"type\":\"vault:path_access\",\"path\":\"{{vault_secret_api_path}}\",\"capabilities\":[\"read\"]}]",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200',()=>pm.response.to.have.status(200));",
+                  "const j=pm.response.json(); pm.environment.set('delegated_token',j.access_token);",
+                  "function b64url(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return atob(s);}",
+                  "try{const c=JSON.parse(b64url(j.access_token.split('.')[1]));",
+                  " console.log('Delegated safe claims',{iss:c.iss,sub:c.sub,act:c.act,aud:c.aud,authorization_details:c.authorization_details});",
+                  " pm.test('aud contains expected Vault audience',()=>pm.expect([].concat(c.aud||[])).to.include(pm.environment.get('vault_audience')));",
+                  "}catch(e){console.warn(e);}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 - Vault Runtime",
+      "item": [
+        {
+          "name": "Read Course Assistant Agent Registry Record",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Vault-Token",
+                "value": "{{vault_sync_token}}"
+              },
+              {
+                "key": "X-Vault-Namespace",
+                "value": "{{vault_namespace}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{vault_addr}}/v1/agent-registry/registration/entity-id/{{vault_agent_entity_id}}",
+              "host": [
+                "{{vault_addr}}"
+              ],
+              "path": [
+                "v1",
+                "agent-registry",
+                "registration",
+                "entity-id",
+                "{{vault_agent_entity_id}}"
+              ]
+            },
+            "description": "Administrative validation only. Use the restricted sync token, not the runtime delegated JWT."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Agent registration returned',()=>pm.response.to.have.status(200));",
+                  "const j=pm.response.json(); console.log('Agent registration',j.data);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read Premium Tool API Key with Delegated JWT",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Vault-Token",
+                "value": "{{delegated_token}}"
+              },
+              {
+                "key": "X-Vault-Namespace",
+                "value": "{{vault_namespace}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{vault_addr}}/v1/{{vault_secret_api_path}}",
+              "host": [
+                "{{vault_addr}}"
+              ],
+              "path": [
+                "v1",
+                "{{vault_secret_api_path}}"
+              ]
+            },
+            "description": "Runtime request. The IBM Verify delegated JWT is presented directly to Vault. Test script stores api_key into vault_api_key without logging it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Secret read succeeds',()=>pm.response.to.have.status(200));",
+                  "const j=pm.response.json(); const key=j?.data?.data?.api_key; pm.expect(key).to.be.a('string'); pm.environment.set('vault_api_key',key); console.log('api_key captured as environment variable; value not logged');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 - Protected Tool",
+      "item": [
+        {
+          "name": "Call Premium Enrollment Tool with Vault API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Course-API-Key",
+                "value": "{{vault_api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{premium_api_url}}",
+              "host": [
+                "{{premium_api_url}}"
+              ]
+            },
+            "description": "Run after the Vault secret request. The API key came from Vault and is passed only to the protected downstream tool.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courseId\": \"PREM-801\",\n  \"subject\": \"postman-demo-user\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Premium API success',()=>pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

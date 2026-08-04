@@ -1,0 +1,34 @@
+[
+  {
+    "id": "BAS-101",
+    "title": "Security Fundamentals",
+    "price": 200,
+    "currency": "SGD",
+    "premium": false,
+    "description": "Standard course; no Vault secret is needed."
+  },
+  {
+    "id": "IAM-201",
+    "title": "Identity and Access Management Essentials",
+    "price": 450,
+    "currency": "SGD",
+    "premium": false,
+    "description": "Standard course; direct enrollment path."
+  },
+  {
+    "id": "PREM-801",
+    "title": "Enterprise AI Agent Security",
+    "price": 1200,
+    "currency": "SGD",
+    "premium": true,
+    "description": "Premium course; requires Verify OBO and Vault-released API key."
+  },
+  {
+    "id": "PREM-901",
+    "title": "Advanced Agent Governance",
+    "price": 1800,
+    "currency": "SGD",
+    "premium": true,
+    "description": "Premium course; requires Verify OBO and Vault-released API key."
+  }
+]

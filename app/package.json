@@ -1,0 +1,23 @@
+{
+  "name": "ibm-verify-vault-course-agent-tool-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Course Assistant demo using IBM Verify OBO token exchange and Vault Agent Registry/OAuth Resource Server to retrieve a protected tool API key",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/services/verify.js && node --check src/services/vault.js && node --check src/services/catalog.js && node --check src/utils/jwt.js",
+    "test": "node test/static-flow.test.js && node test/protected-api.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "openid-client": "^5.6.5"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "action": "created",
+  "resource": {
+    "schemas": ["urn:ietf:params:scim:schemas:core:ibm:2.0:Agent"],
+    "id": "agent-uc1-001",
+    "displayName": "Agent for UC1",
+    "description": "Course Portal",
+    "activationDate": "2026-06-25T00:00:00Z",
+    "expirationDate": "2028-12-01T00:00:00Z",
+    "owners": [{"value": "3250007A8M", "type": "User"}],
+    "oauthClients": [],
+    "permissions": [],
+    "status": "DRAFT",
+    "tags": ["Search"]
+  }
+}

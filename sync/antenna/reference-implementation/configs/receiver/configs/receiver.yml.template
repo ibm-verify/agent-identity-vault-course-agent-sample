@@ -1,0 +1,27 @@
+---
+version: 26.03
+
+logging:
+  level: debug
+
+receiver:
+  server:
+    ssl:
+      key: "ks:server/key"
+      certificate: "ks:server/cert"
+  base_url: "https://${HOST_IP}:${RX_PORT}"
+  event_types:
+    - "${SESSION_EVENT}"
+  management:
+    enabled: true
+  runtime:
+    enabled: true
+    worker_threads: 2
+    cleaner_interval_in_secs: 60
+    event_states_to_clean:
+      - "actioned"
+      - "errored"
+    action_rules:
+      - event_type: "${SESSION_EVENT}"
+        type: javascript
+        content: "@js/vault_agent_registry_action.js"

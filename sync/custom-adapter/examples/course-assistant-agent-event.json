@@ -1,0 +1,8 @@
+{
+  "verifyAgentId": "<VERIFY_AGENT_ID>",
+  "displayName": "Course Assistant",
+  "status": "ACTIVE",
+  "owner": "<OWNER_OR_TEAM>",
+  "runtimeOAuthClientId": "<ACTOR_CLIENT_ID>",
+  "runtimeActorIdentity": "<ACTOR_TOKEN_SUB_OR_EXPECTED_ALIAS>"
+}

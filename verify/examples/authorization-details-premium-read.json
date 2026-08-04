@@ -1,0 +1,9 @@
+[
+  {
+    "type": "vault:path_access",
+    "path": "course-tools/data/premium-enrollment",
+    "capabilities": [
+      "read"
+    ]
+  }
+]

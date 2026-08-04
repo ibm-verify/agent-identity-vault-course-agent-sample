@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Course Assistant</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <main class="landing">
+    <section class="panel hero">
+      <div class="badge">IBM Verify + Vault E2E</div>
+      <h1>Secure Course Assistant</h1>
+      <p>Standard enrollment is direct. Premium enrollment requires a subject-plus-actor token exchange, Vault Agent Registry validation, and a Vault-released API key.</p>
+      <% if (!user) { %>
+        <a class="button" href="/login">Sign in with IBM Verify</a>
+      <% } else { %>
+        <p>Signed in as <strong><%= user.email || user.preferred_username || user.sub %></strong></p>
+        <a class="button" href="/courses">Open course portal</a>
+      <% } %>
+    </section>
+  </main>
+</body>
+</html>

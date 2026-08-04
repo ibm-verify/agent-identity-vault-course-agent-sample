@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Course Portal</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header class="topbar"><div><strong>Secure Course Portal</strong><span>Single Course Assistant Agent</span></div><div><%= user.email || user.preferred_username || user.sub %> · <a href="/logout">Logout</a></div></header>
+<main class="layout">
+  <section>
+    <h1>Available courses</h1>
+    <div class="grid">
+    <% courses.forEach(course => { %>
+      <article class="panel course <%= course.premium ? 'premium' : '' %>">
+        <div class="badge"><%= course.premium ? 'PREMIUM · VAULT REQUIRED' : 'STANDARD' %></div>
+        <h2><%= course.title %></h2>
+        <p><%= course.description %></p>
+        <p class="price"><%= course.currency %> <%= course.price %></p>
+        <form method="post" action="/enroll"><input type="hidden" name="courseId" value="<%= course.id %>"><button class="button" type="submit">Enroll</button></form>
+      </article>
+    <% }) %>
+    </div>
+  </section>
+  <aside>
+    <section class="panel"><h2>My enrollments</h2>
+      <% if (!enrollments.length) { %><p>None yet.</p><% } %>
+      <% enrollments.forEach(item => { %><div class="enrollment"><strong><%= item.courseId %></strong><span><%= item.title %></span></div><% }) %>
+    </section>
+    <% if (result) { %>
+    <section class="panel result <%= result.ok ? 'success' : 'failure' %>">
+      <h2><%= result.ok ? 'Success' : 'Denied / Failed' %></h2><p><%= result.message %></p>
+      <p><strong>Flow:</strong> <%= result.flowType %></p>
+      <details open><summary>Safe execution trace</summary><pre><%= JSON.stringify(result.trace, null, 2) %></pre></details>
+    </section>
+    <% } %>
+  </aside>
+</main>
+</body>
+</html>
