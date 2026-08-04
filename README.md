@@ -1,5 +1,9 @@
 # IBM Verify + HashiCorp Vault — Secure Course Agent Tool Credentials
 
+| ⚠️ EARLY ACCESS PREVIEW ⚠️ |
+| :--- |
+| Agent identity is under the Early Access Program (EAP) and for selected participants. Features and functionality are subject to change in the coming iterations. |
+
 A customer-focused, end-to-end reference implementation for securing an AI agent's tool credential with **IBM Verify delegated authorization** and **HashiCorp Vault native AI agent support**.
 
 ## Objective
