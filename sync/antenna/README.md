@@ -152,7 +152,7 @@ Verify Antenna Receiver :9043
         ▼
 Vault Identity + Alias + Agent Registry
 ```
-^ Note: Having ngrok public URL is only for developement purpose. Not recommended for production.
+^ Note: Having ngrok public URL is only for developement purpose. Not recommended for production. And ngrok is only needed if the transmitter endpoint is not directly accessible from IBM Verify. The approach taken for dev purpose leverages notification webhooks. In case script is run to poll the events API and push those events into the transmitter, then ngrok is not needed at all.
 
 ### 3.5 Component Responsibilities Summary
 
