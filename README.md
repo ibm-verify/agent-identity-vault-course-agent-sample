@@ -77,3 +77,4 @@ If the compatibility gate fails, **do not continue with the API-key use case on 
 - Vault Agent Registry is part of runtime enforcement; it is not merely inventory.
 - Antenna is a reference synchronization implementation, not an architectural dependency.
 - Root/admin Vault credentials are used only for initial bootstrap. Synchronization uses a restricted provisioning token. Runtime uses the IBM Verify delegated JWT directly.
+# agent-sync-iai-vault
