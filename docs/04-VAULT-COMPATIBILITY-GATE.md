@@ -1,70 +1,46 @@
-# 4. Vault Compatibility Gate — Run This First
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-This is a **hard prerequisite** for the API-key use case.
+SPDX-License-Identifier: Apache-2.0
+-->
 
-## Why this step exists
+# 4. Start and check Vault Enterprise
 
-The demo needs:
+**Purpose:** start a disposable licensed server that both the host and Antenna receiver can reach. This guide uses the **root namespace**; `VAULT_NAMESPACE` is empty and no `X-Vault-Namespace` header is sent. Root namespace and root-token authentication are different concepts.
 
-1. Vault Enterprise native AI Agent Registry.
-2. Vault OAuth Resource Server configuration.
-3. Vault Identity entities/aliases.
-4. KV v2 to store the Premium Tool API key.
+## 4.1 Start the server — Terminal A
 
-A Vault cluster in PKI-only mode rejects API requests to secret-engine mounts other than PKI. Do not spend time configuring IBM Verify until you know the Vault cluster can run this use case.
-
-## Step 4.1 — Export Vault bootstrap settings
+Open a new terminal and set the actual absolute license path:
 
 ```bash
-export VAULT_ADDR="http://127.0.0.1:8200"
-export VAULT_TOKEN="<bootstrap-admin-or-root-token>"
+export VAULT_LICENSE_PATH='/absolute/path/to/vault.hclic'
+vault server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
 ```
 
-If using a namespace:
+**Expected:** Vault starts, is initialized and unsealed, and listens on port 8200. Leave this terminal running. If license validation or feature entitlement fails, correct the license/build before continuing.
+
+The listener binds all host interfaces so Docker can reach it. Run this disposable configuration only on an isolated workstation with access to port 8200 restricted. Dev mode keeps its state in memory. Stopping this server discards its configuration and secrets; the guide does not configure raft storage.
+
+## 4.2 Check from Terminal B
 
 ```bash
-export VAULT_NAMESPACE="<namespace>"
+cd "$UC3_ROOT"
+source lab.env
+curl --fail-with-body -sS "$VAULT_ADDR/v1/sys/health" -o .runtime/vault-health.json
+jq -e '.initialized == true and .sealed == false' .runtime/vault-health.json
+jq '{version,initialized,sealed}' .runtime/vault-health.json
 ```
 
-## Step 4.2 — Run the included checker
+**Expected:** `true`, with your actual Enterprise version. HTTP connection failure means the server/listener is not ready. Do not continue until this check passes.
+
+## 4.3 Check administrator access
 
 ```bash
-bash vault/scripts/00_check_compatibility.sh
+curl --fail-with-body -sS -H "X-Vault-Token: $VAULT_ADMIN_TOKEN" \
+ "$VAULT_ADDR/v1/auth/token/lookup-self" -o .runtime/vault-admin-check.json
+jq -e '.data.policies | index("root") != null' .runtime/vault-admin-check.json
 ```
 
-The script checks:
+**Expected:** `true` for this new dedicated dev server. The admin credential is used only for setup and inspection. Synchronization will receive a separate restricted token; runtime reads will use a Verify-issued JWT.
 
-- Vault is reachable.
-- Version information is available.
-- OAuth Resource Server activation/configuration API is reachable.
-- Agent Registry API is reachable.
-- A temporary KV v2 mount can be enabled and removed.
-
-## Expected result
-
-```text
-PASS: Vault reachable
-PASS: OAuth Resource Server API available
-PASS: Agent Registry API available
-PASS: KV v2 mount permitted
-READY: This cluster can run the API-key cookbook
-```
-
-## If KV fails
-
-Do not continue with this API-key cookbook on that cluster.
-
-For a PKI-only cluster, use a different Vault Enterprise environment where KV secrets are permitted, or design a separate PKI-specific use case. The main cookbook intentionally stays focused on the simple tool-API-key scenario.
-
-## If Agent Registry fails
-
-Verify:
-
-- Vault Enterprise version is 2.0.3 or later.
-- The appropriate Enterprise entitlement is active.
-- The namespace is correct.
-- The bootstrap token has permission to access the endpoint.
-
-## STOP CHECKPOINT
-
-Proceed only when all required checks pass.
+**Stop checkpoint:** health and admin checks pass. Proceed to Step 5.

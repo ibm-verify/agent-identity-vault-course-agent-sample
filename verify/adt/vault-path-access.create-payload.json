@@ -1,9 +1,7 @@
 {
   "type": "vault:path_access",
-  "description": "Vault path access constraints for AI agent tool credentials",
-  "schema": "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"title\":\"Vault Path Access\",\"type\":\"object\",\"required\":[\"type\",\"path\",\"capabilities\"],\"additionalProperties\":false,\"properties\":{\"type\":{\"const\":\"vault:path_access\"},\"path\":{\"type\":\"string\",\"pattern\":\"^[A-Za-z0-9._/:-]+$\"},\"capabilities\":{\"type\":\"array\",\"uniqueItems\":true,\"items\":{\"type\":\"string\",\"enum\":[\"read\",\"create\",\"update\",\"delete\",\"list\",\"sudo\",\"patch\",\"subscribe\",\"recover\",\"deny\"]}}}}",
-  "signatureStrategy": "custom",
-  "signatureRule": "requestContext.ad.path",
-  "inlineMode": "false",
-  "consentLabel": "Vault path access"
+  "description": "Read the UC3 course API credential",
+  "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"type\",\n    \"path\",\n    \"capabilities\"\n  ],\n  \"properties\": {\n    \"type\": {\n      \"const\": \"vault:path_access\"\n    },\n    \"path\": {\n      \"const\": \"course-tools/data/premium-enrollment\"\n    },\n    \"capabilities\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"const\": \"read\"\n      },\n      \"minItems\": 1,\n      \"maxItems\": 1\n    }\n  },\n  \"additionalProperties\": false\n}\n",
+  "inlineMode": true,
+  "consentInlineText": "PGRpdj5SZWFkIHRoZSBjb3Vyc2UgQVBJIGNyZWRlbnRpYWwuPC9kaXY+"
 }

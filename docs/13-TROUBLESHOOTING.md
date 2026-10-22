@@ -1,139 +1,64 @@
-# 13. Troubleshooting
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-For the exact Mac, Vault CLI, license, OAuth mount-accessor, template-rendering, Colima, and Antenna receiver issues validated while building this package, start with [13A-VALIDATED-SETUP-TROUBLESHOOTING.md](13A-VALIDATED-SETUP-TROUBLESHOOTING.md).
+SPDX-License-Identifier: Apache-2.0
+-->
 
-Troubleshoot in the same order as the architecture. Do not start with the Course Portal if an earlier checkpoint is failing.
+# 13. Troubleshooting, restart and cleanup
 
-## 13.1 Vault compatibility
+| Symptom | Check | Required recovery |
+|---|---|---|
+| Vault activation 404 or unsupported API | Actual Enterprise binary, URL and license capabilities | Correct the product/build/license before proceeding |
+| License failure at startup | Absolute `VAULT_LICENSE_PATH`, license validity and binary | Restart the disposable server only after correcting the license; repeat setup after its state loss |
+| Agent GET 401/403 | Recipe API client, management endpoint, entitlement | Refresh the management token or correct rights; do not substitute an OAuth actor token |
+| Agent GET 404/400/406 | Actual registry ID, API path, Accept header | Use the verified Agent path and `application/scim+json` |
+| ACTIVE agent not provisioned | API response's `oauthClients[].purposes` | Save the real `agent_id` association; missing purpose is not inferred |
+| Metadata local failure | Container logs, rendered YAML/custom event catalogue, startup readiness | Correct the local service before retrying public routing |
+| Metadata public-only failure | ngrok URL and upstream scheme/port | Update the configured public URL, re-render and restart if the tunnel URL changed |
+| Receiver OAuth error | Recipe API client credentials and discovery URL | Repeat the Step 6.1 token check and verify lab.env was saved |
+| Container cannot reach Vault | `host.docker.internal`, Docker host-gateway route, listener and firewall | Verify receiver call results; host-side health alone is insufficient |
+| Event arrives but no action | Management event fields, supported event type, real AgentID | Inspect actual payload and Verify GET; a webhook test body is insufficient |
+| Actor subject is client ID | Runtime `sub` mapping and fresh token | Apply the trusted AgentID mapping and reissue |
+| Credential subject is human | Credential Exchange `sub` mapping | Apply mapping to that application; retain Task Exchange's human subject |
+| Exchange denied | Correct clients, RAR binding, `may_act`, Actor Criteria and valid input tokens | Inspect the actual non-2xx error; do not remove validation |
+| Registration lookup HTTP 400: agent for provided entity id does not exist | Entity exists but has no registration | Reconcile using the receiver; this exact response is treated as a missing record |
+| Vault 403 with current JWT | Issuer/alias, entity ACL, enabled state, registration ceiling, exact RAR | Fix the mismatched component; keep generated `act` |
+| Course API 403 after Vault 200 | Stored key versus `PREMIUM_API_EXPECTED_KEY` | Restore matching dummy key |
+| Local npm install fails | Network/proxy/registry configuration | Retry `npm ci` only after fixing access |
 
-### KV enable fails
+## Resume a terminal
 
-Likely causes:
-
-- PKI-only licensed cluster.
-- Token lacks mount-management permission.
-- Namespace mismatch.
-
-If the cluster is PKI-only, this API-key use case cannot use KV on that cluster.
-
-## 13.2 Agent synchronization
-
-### Vault entity exists but Agent Registry record does not
-
-Check:
-
-- Verify agent status is ACTIVE.
-- Runtime OAuth client is associated with the agent.
-- Mapper found the correct OAuth client / `agent_id` purpose.
-- Restricted sync token can call `agent-registry/register`.
-- `entity_id` supplied to Agent Registry is the Vault-generated Identity entity ID.
-
-### Agent registration exists but Vault cannot resolve actor
-
-Check:
-
-- Actor token `sub`.
-- Alias `name`.
-- OAuth Resource Server profile mount accessor.
-- Issuer/profile binding.
-
-The most common mistake is assuming the actor token `sub` without decoding a real actor token.
-
-## 13.3 Token exchange
-
-### `invalid_client`
-
-Ensure the credentials are for the **Course Vault Token Exchange OIDC application**, not the Subject app or Actor app.
-
-### Actor validation / delegation denied
-
-Check:
-
-- `Require actor token` is enabled.
-- Subject token contains/carries `may_act` data.
-- `may_act` properties match the actor token claims.
-- `Skip default actor validation` is not enabled unless using Actor Criteria intentionally.
-
-### `invalid_authorization_details`
-
-Check:
-
-- `vault:path_access` exists.
-- Token Exchange OIDC application restricts/allows that ADT.
-- JSON schema uses `path` and a `capabilities` array.
-- Runtime path exactly matches the KV v2 API path.
-
-## 13.4 Vault delegated JWT
-
-### JWT validation failure
-
-Check:
-
-- `iss` exactly matches configured issuer.
-- JWKS URL is reachable.
-- JWT access token is signed with an allowed algorithm.
-- Clock skew/time is correct.
-- `aud` contains `vault-course-tools`.
-
-### Token exchange succeeds but Vault returns 403 and audit has `auth.entity_id=null`
-
-Vault received the JWT but did not resolve it to a Vault Identity entity. Read both subject and actor aliases and verify nonempty `issuer` and `external_id`, in addition to `name`, `canonical_id`, and `mount_accessor`. An issuer cannot be added after alias creation; repair the alias using [13A-VALIDATED-SETUP-TROUBLESHOOTING.md](13A-VALIDATED-SETUP-TROUBLESHOOTING.md).
-
-### Agent registration required / not found
-
-Check the actor entity registration:
+In a new setup terminal, enter the extracted root and restore exported configuration:
 
 ```bash
-curl -sS \
-  -H "X-Vault-Token: $VAULT_SYNC_TOKEN" \
-  "$VAULT_ADDR/v1/agent-registry/registration/entity-id/$VAULT_AGENT_ENTITY_ID" | jq
+export UC3_ROOT="$PWD"
+source lab.env
+export VERIFY_JWKS_URI="$(jq -er '.jwks_uri' .runtime/verify-discovery.json)"
+export VAULT_SYNC_TOKEN="$(cat .uc3-sync-token)"
+export ANTENNA_ROOT="$UC3_ROOT/sync/antenna/reference-implementation"
 ```
 
-### RAR no match
+Check Vault health and synchronize checkpoint before running the app. Restart the app with `npm start` from `app/`. Restart an existing Antenna lab with `docker compose up -d` from its reference-implementation directory; keep its databases, certificates and stream. Do not create a duplicate stream on every retry.
 
-`vault:path_access.path` is exact-match. For KV v2 use:
-
-```text
-course-tools/data/premium-enrollment
-```
-
-not:
-
-```text
-course-tools/premium-enrollment
-```
-
-## 13.5 Tool returns HTTP 403 after Vault read succeeds
-
-This is a downstream credential failure, not an IBM Verify/Vault authorization failure.
-
-Compare:
-
-- Vault `api_key` value.
-- App `PREMIUM_API_EXPECTED_KEY`.
-
-For the intentional negative test these values are supposed to differ.
-
-## 13.6 Antenna / ngrok
-
-### Public discovery URL fails
-
-First confirm local transmitter:
+If the eight-hour synchronization token expires, use the admin credential to issue a new token with policy `uc3-sync`, store it privately in `.uc3-sync-token`, export `VAULT_SYNC_TOKEN`, re-render and recreate the receiver container. Its permissions must remain restricted; do not replace it with root to resolve expiry. Run the following from the repository root:
 
 ```bash
-curl -k https://localhost:9044/.well-known/ssf-configuration
+bash vault/scripts/04_create_sync_token.sh
+export VAULT_SYNC_TOKEN="$(cat .uc3-sync-token)"
+cd "$ANTENNA_ROOT"
+bash scripts/03_render_templates.sh
+docker compose up -d --force-recreate antenna-receiver
+cd "$UC3_ROOT"
 ```
 
-Then start:
+
+## Cleanup
+
+Stop the portal with Ctrl-C in Terminal D. In Terminal B:
 
 ```bash
-ngrok http https://localhost:9044
+cd "$ANTENNA_ROOT"
+docker compose down
 ```
 
-Then test:
-
-```bash
-curl https://<ngrok-domain>/.well-known/ssf-configuration
-```
-
-Do not configure the external event stream until the public discovery URL works.
+Stop ngrok with Ctrl-C in Terminal C. Disable the dedicated UC3 webhook in Verify so it no longer sends to an inactive/public tunnel. Stop Vault with Ctrl-C in Terminal A only when you no longer need this disposable server; doing so discards its state. Preserve local files only for as long as needed and keep them private. Remove dedicated lab applications/API clients/agent through their supported lifecycle controls when the lab is retired; leave unrelated objects unchanged.

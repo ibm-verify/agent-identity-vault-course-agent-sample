@@ -1,3 +1,7 @@
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 services:
   antenna-receiver:
     image: icr.io/ibm-verify/ibm-verify-antenna-receiver:26.03.0

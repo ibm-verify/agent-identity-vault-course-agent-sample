@@ -1,3 +1,9 @@
+/*
+Copyright IBM Corp. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+*/
+
 :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172033; background: #f3f6fb; }
 * { box-sizing: border-box; }
 body { margin: 0; }

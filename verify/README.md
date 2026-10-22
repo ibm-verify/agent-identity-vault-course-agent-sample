@@ -1,9 +1,9 @@
-# IBM Verify Assets
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-Use these files while following `docs/08-CONFIGURE-VERIFY-OBO.md` and `docs/10-SMOKE-TEST.md`.
+SPDX-License-Identifier: Apache-2.0
+-->
 
-- `adt/` — current `vault:path_access` Authorization Detail Type schema and creation payload.
-- `examples/` — exact RAR used by the premium-course secret read.
-- `scripts/` — helper scripts to obtain the actor token, decode JWTs, perform token exchange, and create the ADT through the management API.
+# Verify setup helpers
 
-The token-exchange client in this cookbook is a dedicated IBM Verify **OIDC application with the Token Exchange grant** and audience `vault-course-tools`.
+Follow [the complete setup guide](../SETUP-GUIDE.md) in sequence. Each helper is introduced with its required inputs and expected result. The primary first-run paths are the Vault bootstrap in Step 5 and the Verify login/exchange helpers in Step 10.

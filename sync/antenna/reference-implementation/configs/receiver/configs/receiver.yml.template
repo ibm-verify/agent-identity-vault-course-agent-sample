@@ -1,3 +1,7 @@
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 ---
 version: 26.03
 
@@ -11,17 +15,21 @@ receiver:
       certificate: "ks:server/cert"
   base_url: "https://${HOST_IP}:${RX_PORT}"
   event_types:
-    - "${SESSION_EVENT}"
+    - "urn:ietf:params:scim:event:prov:patch:full"
+    - "urn:ietf:params:scim:event:prov:create:full"
   management:
     enabled: true
   runtime:
     enabled: true
-    worker_threads: 2
+    worker_threads: 1
     cleaner_interval_in_secs: 60
     event_states_to_clean:
       - "actioned"
       - "errored"
     action_rules:
-      - event_type: "${SESSION_EVENT}"
+      - event_type: "urn:ietf:params:scim:event:prov:create:full"
+        type: javascript
+        content: "@js/vault_agent_registry_action.js"
+      - event_type: "urn:ietf:params:scim:event:prov:patch:full"
         type: javascript
         content: "@js/vault_agent_registry_action.js"

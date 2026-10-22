@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "check": "node --check src/server.js && node --check src/services/verify.js && node --check src/services/vault.js && node --check src/services/catalog.js && node --check src/utils/jwt.js",
-    "test": "node test/static-flow.test.js && node test/protected-api.test.js"
+    "test": "node test/static-flow.test.js && node test/protected-api.test.js && node test/exchanges.test.js"
   },
   "engines": {
     "node": ">=18"

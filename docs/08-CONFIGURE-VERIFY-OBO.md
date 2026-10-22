@@ -1,201 +1,82 @@
-# 8. Configure IBM Verify OBO and Token Exchange
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-This phase creates the human subject application, the delegation relationship, the Vault RAR type, and the OIDC application that performs RFC 8693 token exchange.
+SPDX-License-Identifier: Apache-2.0
+-->
 
-Note: For detailed step , Please refer to OBO Token exchange tutorial.
+# 8. Configure authorization details and delegation rules
 
-## Why use an OIDC application for token exchange?
+**Purpose:** authorize the human-context task and then convert its authority to a narrow agent-subject credential-read JWT. The second exchange uses the task token as `subject_token`, not the original human token. The final `act` is retained.
 
-This cookbook uses an **OpenID Connect application with the Token Exchange grant**. The OIDC application can also configure the JWT access-token **Audiences** field. That audience is included in the `aud` claim and is matched by the Vault OAuth Resource Server profile.
+## 8.1 Register the two authorization detail types
 
-Recommended audience:
+Refresh the setup API token if it has expired by repeating Step 6.1. Then:
 
-```text
-vault-course-tools
+```bash
+cd "$UC3_ROOT"
+bash verify/scripts/05_create_vault_path_access_adt.sh
 ```
 
-## Prerequisites
+**Expected:** `PASS` for both `vault:path_access` and `urn:ibm:demo:verify:course_credential_task`. The helper builds the create payload from the bundled schema, sends it to `/v1.0/auth-detail-types`, and stores responses privately under `.runtime/`.
 
-- Course Assistant synchronized to Vault.
-- [07A-STORE-TOOL-SECRET-BEFORE-VERIFY.md](07A-STORE-TOOL-SECRET-BEFORE-VERIFY.md) passed with the new non-PKI license.
-- `course-tools/premium-enrollment` exists and contains the `api_key` field.
-- Actor client ID and actor token identity are known.
-- Vault OAuth profile expects audience `vault-course-tools`.
+A 409 means that type already exists in the tenant. The helper still attempts both types, then stops at a compatibility checkpoint. Inspect each existing schema in the console and confirm it accepts the request below; once confirmed, proceed to the application bindings without recreating the type. Do not overwrite a shared type or rename `vault:path_access` as a workaround. A 401/403 means the setup API token or entitlement needs correction.
 
-## Step 8.1 — Create the Course Portal subject application
+In each exchange application's **Sign-on → Authorization details** settings, attach only its type and reject unknown types:
 
-Create an OIDC application:
+| Application | Allowed type | Requested fields |
+|---|---|---|
+| Course Task Exchange | `urn:ibm:demo:verify:course_credential_task` | `action=premium_enroll`, `courseId=PREM-801`, unique `reference` |
+| Course Credential Exchange | `vault:path_access` | `path=course-tools/data/premium-enrollment`, `capabilities=["read"]` |
 
-```text
-Name: Course Portal
-Grant type: Authorization Code
-Response type: code
-Redirect URI: http://localhost:4000/callback
-Require PKCE verification: enabled
-Access token format: JWT
-```
+If the tenant requires consent/preapproval for either type, complete the user grant through its supported approval workflow. Keep consent controls enabled; an issuance error is not a reason to bypass them.
 
-Record:
+## 8.2 Bind Runtime and Credential Exchange to the permanent AgentID
 
-```text
-SUBJECT_CLIENT_ID
-SUBJECT_CLIENT_SECRET
-```
+For **Course Assistant Runtime**, open **Sign-on → Endpoint configuration → ID token and user info → Edit**. Add a custom rule targeting `sub`. Its value is a quoted string containing the real registry UUID, for example `"<your-actual-AgentID>"`. Save.
 
-## Step 8.2 — Configure `may_act`
+Apply the same `sub` rule to **Course Credential Exchange**. Leave Course Portal and Course Task Exchange subjects unchanged. Do not add a rule clearing `act`.
 
-The default delegation validation uses `may_act` to correlate the allowed actor with claims in the actor token.
+These are administrator-reviewed bindings for this dedicated agent. Never let the caller select the trusted output AgentID. New tokens must be issued after changing mappings.
 
-For the tested client-based mapping:
+**Expected contract:** actor token subject = AgentID; task token subject = human; credential token subject and immediate `act.sub` = AgentID. Step 10 checks the actual signed output.
+
+## 8.3 Permit the actor in each incoming subject context
+
+Open **Course Portal → Sign-on → Endpoint configuration → Introspect → Edit**. Add a custom rule targeting `may_act` with this object, replacing both placeholders:
 
 ```json
-{
-  "client_id": "<ACTOR_CLIENT_ID>"
-}
+{"sub":"<actual-AgentID>","client_id":"<Course-Assistant-Runtime-client-id>"}
 ```
 
-Configure this on the **Subject OIDC application** under the Introspect/endpoint mapping area, targeting:
+Add the same `may_act` rule to **Course Task Exchange**. The first mapping permits the runtime actor against the human's token; the second permits it when the task token becomes the next subject token. Keep default actor validation enabled on both exchange applications.
 
-```text
-may_act
+**Expected:** both rules are saved on the correct applications. `may_act` is subject-token introspection context; it is not an extra form parameter in the exchange request.
+
+## 8.4 Restrict the actual input clients and task
+
+Generate the criteria with your exported IDs:
+
+```bash
+python3 - <<'PYRULE'
+import os
+from pathlib import Path
+actor=os.environ['ACTOR_CLIENT_ID']; agent=os.environ['VERIFY_AGENT_ID']
+portal=os.environ['WEB_CLIENT_ID']; task=os.environ['TASK_CLIENT_ID']
+base=f"requestContext.actor_token.client_id == '{actor}' &&\nrequestContext.actor_token.sub == '{agent}' &&\n"
+Path('.runtime/task-actor-criteria.cel').write_text(base+f"requestContext.subject_token.client_id == '{portal}'\n")
+Path('.runtime/credential-actor-criteria.cel').write_text(base+f"requestContext.subject_token.client_id == '{task}' &&\n"+
+ "has(requestContext.subject_token.authorization_details) &&\n"+
+ "requestContext.subject_token.authorization_details.exists(d,\n"+
+ " d.type == 'urn:ibm:demo:verify:course_credential_task' &&\n"+
+ " d.action == 'premium_enroll' && d.courseId == 'PREM-801')\n")
+print('PASS: generated both criteria files')
+PYRULE
+cat .runtime/task-actor-criteria.cel
+cat .runtime/credential-actor-criteria.cel
 ```
 
+Open **Course Task Exchange → Sign-on → Token exchange → Actor criteria → Set criteria** and paste the first file. Apply the second file to **Course Credential Exchange**. Save each rule and test it with the console's incoming-token context where available. Do not remove task validation to make an exchange succeed.
 
-### Mental model
+The rules restrict this demonstration to PREM-801 and the dedicated client/actor chain. PREM-901 is a deliberate disallowed premium course. Business eligibility, real purchase authorization and payment approval require trusted business rules in a production task service/API; this sample does not implement those services or CIBA.
 
-```text
-actor_token = Who is actually acting?
-may_act     = Is that actor allowed to act for this subject?
-```
-
-Leave default actor validation enabled for the base demo. Do not select "Skip default actor validation" unless you intentionally replace `may_act` with a tested Actor Criteria rule.
-
-## Step 8.3 — Create the `vault:path_access` Authorization Detail Type
-
-IBM Verify must validate the same RAR structure that Vault expects. **This is the only Authorization Detail Type required for the base API-key use case.** The downstream course operation remains application logic; the delegated JWT sent to Vault carries only the Vault access constraint required for this secret read.
-
-Use the files:
-
-```text
-verify/adt/vault-path-access.schema.json
-verify/adt/vault-path-access.create-payload.json
-```
-
-Core schema:
-
-```json
-{
-  "type": "object",
-  "required": ["type", "path", "capabilities"],
-  "additionalProperties": false,
-  "properties": {
-    "type": { "const": "vault:path_access" },
-    "path": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9._/:-]+$"
-    },
-    "capabilities": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {
-        "type": "string",
-        "enum": [
-          "read", "create", "update", "delete", "list", "sudo",
-          "patch", "subscribe", "recover", "deny"
-        ]
-      }
-    }
-  }
-}
-```
-
-For this use case, the runtime authorization detail is:
-
-```json
-[
-  {
-    "type": "vault:path_access",
-    "path": "course-tools/data/premium-enrollment",
-    "capabilities": ["read"]
-  }
-]
-```
-
-
-## Step 8.4 — Create the Token Exchange OIDC application
-
-Create another OpenID Connect application:
-
-```text
-Name: Course Vault Token Exchange
-Grant type: Token Exchange
-Client type: confidential
-Access token format: JWT
-Audiences: vault-course-tools
-```
-
-Token Exchange settings:
-
-```text
-Subject Token: Access Token
-Actor Token: Access Token
-Requested Token: Access Token
-Require Actor Token: enabled
-Skip default actor validation: disabled
-```
-
-Authorization details:
-
-```text
-Restrict authorization details: enabled
-Ignore unknown authorization details: disabled
-Allowed type: vault:path_access
-```
-
-
-Record:
-
-```text
-TOKEN_EXCHANGE_CLIENT_ID
-TOKEN_EXCHANGE_CLIENT_SECRET
-```
-
-
-## Step 8.5 — Why the audience matters
-
-IBM Verify OIDC Token Settings:
-
-```text
-Audiences = vault-course-tools
-```
-
-Delegated access token:
-
-```json
-{
-  "aud": ["vault-course-tools"]
-}
-```
-
-Vault OAuth Resource Server profile:
-
-```json
-{
-  "audiences": ["vault-course-tools"]
-}
-```
-
-If the audience does not match, Vault should reject the JWT.
-
-## STOP CHECKPOINT
-
-```text
-[ ] Subject OIDC app created with Auth Code + PKCE + JWT
-[ ] may_act maps to the Course Assistant actor identity
-[ ] vault:path_access ADT exists
-[ ] Token Exchange OIDC app created
-[ ] Require actor token enabled
-[ ] JWT access token format selected
-[ ] Audience vault-course-tools configured
-[ ] vault:path_access is the allowed authorization detail type
-```
+**Stop checkpoint:** two types registered and bound, correct subject mappings saved, both `may_act` rules and restrictive Actor Criteria saved. Continue to Step 9.

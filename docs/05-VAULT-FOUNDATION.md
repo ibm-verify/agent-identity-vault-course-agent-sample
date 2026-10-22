@@ -1,163 +1,79 @@
-# 5. Prepare the Vault Foundation
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-Complete this phase before synchronizing the Course Assistant.
+SPDX-License-Identifier: Apache-2.0
+-->
 
-## What this phase creates
+# 5. Configure Vault trust, ACL and registration ceiling
 
-- OAuth Resource Server trust profile for IBM Verify.
-- Audience validation (`vault-course-tools`).
-- Subject baseline policy.
-- Agent ceiling policy.
-- Restricted Vault synchronization policy/token.
-- OAuth profile `config_id` and mount accessor used by identity aliases.
+**Purpose:** establish JWT validation, create the demo credential and both permission policies, and issue a restricted provisioning token. Skipping any of these leaves synchronization or runtime authorization incomplete.
 
-## Prerequisite
+| Configuration | Why it is needed |
+|---|---|
+| Verify OAuth discovery/JWKS | Identify the issuer and signing keys Vault will trust |
+| OAuth Resource Server profile | Validate the runtime JWT and require RAR |
+| `course-tool-subject` ACL | Grant the agent-subject access to the exact credential path |
+| `course-tool-ceiling` | Bound the registered actor's maximum authority |
+| `verify-agent-sync`/`uc3-sync` provisioning policy | Allow the receiver to manage identities and registration without secret-read access |
+| KV v2 credential | Give the authorized read a real dummy value to retrieve |
 
-- [04-VAULT-COMPATIBILITY-GATE.md](04-VAULT-COMPATIBILITY-GATE.md) passed.
-- You know your IBM Verify issuer URL.
-
-## Step 5.1 — Activate OAuth Resource Server support
-
-```bash
-vault write -f sys/activation-flags/oauth-resource-server/activate
-```
-
-## Step 5.2 — Create the OAuth Resource Server profile
-
-Edit:
-
-```text
-vault/config/course-verify-oauth-profile.json.template
-```
-
-Replace:
-
-```text
-__VERIFY_ISSUER__
-__VERIFY_JWKS_URI__
-__VAULT_AUDIENCE__
-```
-
-Recommended audience:
-
-```text
-vault-course-tools
-```
-
-Then run:
+## 5.1 Discover the issuer metadata
 
 ```bash
-bash vault/scripts/01_configure_oauth_resource_server.sh
+cd "$UC3_ROOT"
+source lab.env
+curl --fail-with-body -sS "$VERIFY_ISSUER/.well-known/openid-configuration" \
+ -o .runtime/verify-discovery.json
+jq -e --arg issuer "$VERIFY_ISSUER" '.issuer == $issuer and (.jwks_uri|type=="string")' \
+ .runtime/verify-discovery.json
+export VERIFY_JWKS_URI="$(jq -er '.jwks_uri' .runtime/verify-discovery.json)"
+export VERIFY_TOKEN_URL="$(jq -er '.token_endpoint' .runtime/verify-discovery.json)"
+printf 'Issuer=%s\nJWKS=%s\n' "$VERIFY_ISSUER" "$VERIFY_JWKS_URI"
+curl --fail-with-body -sS "$VERIFY_JWKS_URI" -o .runtime/verify-jwks.json
+jq -e '.keys|length>0' .runtime/verify-jwks.json
 ```
 
-The profile uses:
+**Expected:** both checks print `true`. If discovery reports another issuer, correct `VERIFY_ISSUER` in `lab.env` and repeat; do not replace the returned signing-key URL with a guessed URL. If the discovered token endpoint differs from `lab.env`, set `VERIFY_TOKEN_URL` to that returned value in `lab.env`.
 
-```json
-{
-  "issuer_id": "https://<your-tenant>/oauth2",
-  "use_jwks": true,
-  "jwks_uri": "https://<your-tenant>/oauth2/jwks",
-  "audiences": ["vault-course-tools"],
-  "user_claim": "sub",
-  "supported_algorithms": ["RS256"],
-  "jwt_type": "access_token",
-  "optional_authorization_details": false,
-  "enabled": true
-}
-```
-
-`optional_authorization_details=false` keeps RAR required.
-
-### Screenshot
-
-
-![Vault OAuth profile placeholder](images/screenshots/placeholders/04-vault-oauth-resource-profile.png)
-
-A reference from the supplied setup material is available under `images/screenshots/reference/`.
-
-## Step 5.3 — Record `config_id` and alias mount accessor
-
-Run:
+## 5.2 Run the dedicated-lab bootstrap
 
 ```bash
-bash vault/scripts/02_get_oauth_profile_binding.sh
+bash vault/scripts/11_bootstrap_agent_subject_lab.sh
 ```
 
-Record:
+The script activates OAuth Resource Server, creates `course-verify`, enables KV v2 at `course-tools/`, stores the dummy key at `course-tools/data/premium-enrollment`, writes the ACL and ceiling, and creates an eight-hour sync token. It does not create an agent or human entity.
 
-```text
-VAULT_OAUTH_CONFIG_ID
-VAULT_OAUTH_MOUNT_ACCESSOR
-```
+**Expected:** successful completion and a printed `VAULT_MOUNT_ACCESSOR`. A feature activation 404, invalid license or unsupported API is a blocking compatibility failure. Check that the request reaches the intended Enterprise binary and that the license includes these capabilities.
 
-The included script follows the tested profile-binding pattern used by the supplied IBM Verify/Vault reference setup and writes the values to `vault/.oauth-runtime.env`.
-
-## Step 5.4 — Create the policies
-
-### Subject baseline policy
-
-`vault/policies/course-tool-subject.hcl`
-
-```hcl
-path "course-tools/data/premium-enrollment" {
-  capabilities = ["read"]
-}
-```
-
-### Agent ceiling policy
-
-`vault/policies/course-tool-ceiling.hcl`
-
-```hcl
-path "course-tools/data/premium-enrollment" {
-  capabilities = ["read"]
-}
-```
-
-Run:
+## 5.3 Record the binding and restricted token
 
 ```bash
-bash vault/scripts/03_write_runtime_policies.sh
+export VAULT_SYNC_TOKEN="$(cat .uc3-sync-token)"
+curl --fail-with-body -sS -H "X-Vault-Token: $VAULT_ADMIN_TOKEN" \
+ "$VAULT_ADDR/v1/sys/config/oauth-resource-server/$VAULT_PROFILE" \
+ -o .runtime/vault-profile.json
+export VAULT_MOUNT_ACCESSOR="$(jq -er '.data.mount_accessor //
+ ("oauth-resource-server_root_" + .data.config_id)' .runtime/vault-profile.json)"
+printf 'VAULT_MOUNT_ACCESSOR=%s\n' "$VAULT_MOUNT_ACCESSOR"
+jq -e --arg issuer "$VERIFY_ISSUER" '.data | .issuer_id==$issuer and .enabled==true and
+ .user_claim=="sub" and .optional_authorization_details==false' .runtime/vault-profile.json
 ```
 
-## Step 5.5 — Create a restricted synchronization token
+**Expected:** `true`. Copy the accessor value into your notes for Step 7. The synthesized fallback applies to the root namespace used here. The alias is created with issuer and external ID; Vault derives the matching accessor.
 
-The synchronization adapter needs provisioning access, but it should not use the root token after bootstrap.
-
-Run:
+## 5.4 Verify both policies and the restricted credential
 
 ```bash
-bash vault/scripts/04_create_sync_token.sh
+for policy in course-tool-subject course-tool-ceiling; do
+ curl --fail-with-body -sS -H "X-Vault-Token: $VAULT_ADMIN_TOKEN" \
+  "$VAULT_ADDR/v1/sys/policies/acl/$policy" | jq '.data | {name,policy}'
+done
+curl --fail-with-body -sS -H "X-Vault-Token: $VAULT_SYNC_TOKEN" \
+ "$VAULT_ADDR/v1/auth/token/lookup-self" -o .runtime/sync-token-check.json
+jq -e '(.data.policies|index("uc3-sync")!=null) and
+ (.data.policies|index("root")==null) and .data.ttl>0' .runtime/sync-token-check.json
 ```
 
-Store the returned token securely as:
+**Expected:** each policy grants only `read` on `course-tools/data/premium-enrollment`, and the sync-token check prints `true`. Protect `.uc3-sync-token`; it can provision identities even though it cannot read the credential. Its eight-hour lifetime limits the lab session; if it expires, issue a fresh restricted token and re-render/restart the receiver configuration.
 
-```text
-VAULT_SYNC_TOKEN
-```
-
-The synchronization policy is intentionally separate from runtime secret access.
-
-### Security boundary
-
-```text
-Vault admin/root token       → bootstrap only
-Restricted VAULT_SYNC_TOKEN → synchronization only
-Delegated IBM Verify JWT    → runtime secret read only
-```
-
-## STOP CHECKPOINT
-
-Before continuing:
-
-```text
-[ ] OAuth Resource Server activated
-[ ] course-verify profile exists and is enabled
-[ ] audience = vault-course-tools
-[ ] optional_authorization_details = false
-[ ] config_id recorded
-[ ] mount accessor recorded
-[ ] course-tool-subject policy exists
-[ ] course-tool-ceiling policy exists
-[ ] restricted synchronization token created
-```
+**Stop checkpoint:** trust profile enabled, issuer/JWKS correct, policies stored and restricted token valid. Continue to Step 6.

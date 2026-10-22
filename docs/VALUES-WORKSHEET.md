@@ -1,65 +1,23 @@
-# Values Worksheet
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-Fill this file while following the cookbook. Keep real secrets out of Git.
+SPDX-License-Identifier: Apache-2.0
+-->
 
-```bash
-# IBM Verify
-VERIFY_TENANT_HOST=
-VERIFY_ISSUER=https://<tenant>/oauth2
-VERIFY_JWKS_URI=https://<tenant>/oauth2/jwks
+# Values worksheet
 
-# Human / subject application
-SUBJECT_CLIENT_ID=
-SUBJECT_CLIENT_SECRET=
-SUBJECT_REDIRECT_URI=http://localhost:4000/callback
-SUBJECT_TOKEN_SUB=
+Use `app/.env.example`, `verify/scripts/00_env.example.sh` and the Antenna local environment template.
 
-# Course Assistant agent and actor application
-VERIFY_AGENT_ID=
-ACTOR_CLIENT_ID=
-ACTOR_CLIENT_SECRET=
-ACTOR_TOKEN_SUB=
+| Check | Expected |
+|---|---|
+| Actor sub | Permanent VERIFY_AGENT_ID |
+| Task sub | Human subject |
+| Task immediate act.sub | VERIFY_AGENT_ID |
+| Credential sub and immediate act.sub | VERIFY_AGENT_ID |
+| Alias name/external_id | VERIFY_AGENT_ID |
+| Alias issuer | Exact credential JWT iss |
+| Entity policy | course-tool-subject |
+| Registration ceiling | course-tool-ceiling |
+| RAR/ACL/ceiling/secret path | course-tools/data/premium-enrollment |
 
-# Token Exchange OIDC application
-TOKEN_EXCHANGE_CLIENT_ID=
-TOKEN_EXCHANGE_CLIENT_SECRET=
-VAULT_AUDIENCE=vault-course-tools
-
-# Vault
-VAULT_ADDR=http://127.0.0.1:8200
-VAULT_NAMESPACE=
-VAULT_OAUTH_PROFILE=course-verify
-VAULT_OAUTH_CONFIG_ID=
-VAULT_OAUTH_MOUNT_ACCESSOR=
-VAULT_AGENT_ENTITY_ID=
-VAULT_AGENT_REGISTRATION_ID=
-VAULT_SUBJECT_ENTITY_ID=
-
-# Secret / tool
-VAULT_KV_MOUNT=course-tools
-VAULT_SECRET_API_PATH=course-tools/data/premium-enrollment
-VAULT_SECRET_FIELD=api_key
-PREMIUM_API_EXPECTED_KEY=course-premium-demo-key-2026
-
-# Antenna sync only
-VERIFY_SYNC_CLIENT_ID=
-VERIFY_SYNC_CLIENT_SECRET=
-VAULT_SYNC_TOKEN=
-NGROK_URL=
-```
-
-## Identity cross-check
-
-```text
-IBM Verify Agent ID              = __________________________
-Actor OAuth client_id            = __________________________
-Actor access-token sub           = __________________________
-Vault OAuth alias name           = __________________________
-Vault OAuth alias external_id    = __________________________
-Vault OAuth alias issuer         = __________________________
-Vault OAuth alias id             = __________________________
-Vault canonical entity_id        = __________________________
-Vault Agent Registry record id   = __________________________
-```
-
-The alias name must match the actor identity expected by the Vault OAuth resource-server binding. Validate the actor token before finalizing the sync mapping.
+Get jwks_uri from actual issuer discovery; keep real secrets out of this worksheet and Git.

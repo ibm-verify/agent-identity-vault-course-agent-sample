@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "required": [
+    "type",
+    "action",
+    "courseId",
+    "reference"
+  ],
+  "properties": {
+    "type": {
+      "const": "urn:ibm:demo:verify:course_credential_task"
+    },
+    "action": {
+      "const": "premium_enroll"
+    },
+    "courseId": {
+      "const": "PREM-801"
+    },
+    "reference": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

@@ -139,8 +139,9 @@ app.post('/enroll', requireLogin, async (req, res) => {
     const actorToken = await getActorToken();
     flow.push(trace('actor-token', 'OK', { claims: safeClaims(actorToken) }));
 
-    const exchange = await exchangeForOboToken(req.session.subjectAccessToken, actorToken);
-    flow.push(trace('rfc8693-token-exchange', 'OK', {
+    const exchange = await exchangeForOboToken(req.session.subjectAccessToken, actorToken, {courseId:course.id,reference:correlationId});
+    flow.push(trace('task-token-exchange', 'OK', {claims:exchange.taskClaims}));
+    flow.push(trace('credential-token-exchange', 'OK', {
       authorization_details: exchange.authorizationDetails,
       claims: exchange.exchangedClaims
     }));
@@ -185,7 +186,7 @@ app.post('/enroll', requireLogin, async (req, res) => {
     const response = error.response;
     flow.push(trace('flow-error', 'ERROR', {
       componentStatus: response ? response.status : undefined,
-      message: response && response.data ? response.data : error.message
+      message: 'Authorization or service request failed; no credential value is displayed.'
     }));
     req.session.lastResult = {
       ok: false,
@@ -222,7 +223,7 @@ app.post('/api/premium/enroll', (req, res) => {
 });
 
 app.use((error, _req, res, _next) => {
-  console.error('[course-demo]', error.response && error.response.data ? error.response.data : error.message);
+  console.error('[course-demo]', error.response ? 'HTTP '+error.response.status : error.message);
   res.status(500).send('Unexpected demo error. Check the terminal log.');
 });
 
