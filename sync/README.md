@@ -1,19 +1,9 @@
-# Agent Synchronization Options
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-The main runtime requires the Course Assistant actor to be registered in Vault before the premium tool is invoked.
+SPDX-License-Identifier: Apache-2.0
+-->
 
-Choose one path:
+# Agent synchronization
 
-- `antenna/` — reference IBM Verify Antenna/SSF recipe, including ngrok and lifecycle tests.
-- `custom-adapter/` — vendor-neutral synchronization contract for teams that prefer their own service or integration platform.
-
-Both paths must produce the same Vault state:
-
-```text
-Vault Identity entity
-+ OAuth alias for the actor runtime identity
-+ Agent Registry registration
-+ course-tool-ceiling
-```
-
-The synchronization integration uses a restricted Vault provisioning token. The Course Assistant runtime never receives that token.
+Use [Antenna](antenna/README.md) or implement the [custom adapter contract](custom-adapter/INTEGRATION-CONTRACT.md). Both must use the permanent issuer-bound AgentID alias, agent ACL and registration ceiling.

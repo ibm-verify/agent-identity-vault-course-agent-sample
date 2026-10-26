@@ -1,89 +1,46 @@
-# 11. Run the Course Portal Demo
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-## Prerequisites
+SPDX-License-Identifier: Apache-2.0
+-->
 
-The smoke test in [10-SMOKE-TEST.md](10-SMOKE-TEST.md) must pass.
+# 11. Run the Course Portal demonstration
 
-## Step 11.1 — Configure the application
+**Purpose:** exercise the complete application after the individual remote boundaries have passed.
+
+## 11.1 Start the portal — Terminal D
+
+Open a terminal, navigate to the extracted `agent-identity-vault-course-agent-sample-main` directory and run:
 
 ```bash
 cd app
-cp .env.example .env
-```
-
-Fill in:
-
-- Verify issuer/token endpoint.
-- Subject client credentials.
-- Actor client credentials.
-- Token Exchange OIDC client credentials.
-- Vault address and secret path.
-- Expected Premium Tool API key.
-
-## Step 11.2 — Install and start
-
-```bash
-npm ci
-npm test
 npm start
 ```
 
-Open:
+**Expected:** `Course demo listening at http://localhost:4000`. The Step 10 sign-in helper must already have exited. Keep Terminal D running. The server loads the `app/.env` generated in Step 9.
 
-```text
-http://localhost:4000
-```
+## 11.2 Sign in and validate the standard path
 
-## Step 11.3 — Sign in
+1. Open `http://localhost:4000` in the browser.
+2. Choose sign in and authenticate as Course Learner.
+3. Enroll in **BAS-101 — Security Fundamentals**.
 
-The app performs Authorization Code + PKCE using the Course Portal subject application.
+**Expected:** enrollment succeeds and appears in My enrollments. The trace indicates no Vault credential was required for this standard course.
 
-After sign-in, choose a course.
+## 11.3 Validate premium enrollment
 
-## Demo A — Standard course
+Choose **PREM-801 — Enterprise AI Agent Security** and enroll.
 
-Select a standard course.
+**Expected:** the trace shows actor authentication, task token exchange, credential token exchange, Vault credential read and protected Course API HTTP 200. The course appears in My enrollments. Credential values are redacted.
 
-Expected trace:
+The app obtains fresh actor/task/credential tokens for each premium request. The human access token comes from the current sign-in session. If it expires, sign out and sign in again.
 
-```text
-request                       OK
-standard-course-policy        OK — no Vault credential required
-enrollment                    SUCCESS
-```
+## 11.4 Confirm the policy boundary
 
-## Demo B — Premium course
+Choose **PREM-901 — Advanced Agent Governance** and enroll.
 
-Select a premium course.
+**Expected:** the operation is denied before the protected API completes because this lab's allowed task schema/criteria is restricted to PREM-801. No PREM-901 enrollment should appear. This is an intentional authorization test, not a storage failure.
 
-Expected execution trace:
+The downstream API is a demonstration API-key consumer. It does not validate the task JWT or process an actual payment. Enrollments are stored in the browser's server-side session and reset when that session/app state is cleared.
 
-```text
-1. Request received
-2. Premium course requires protected tool
-3. Course Assistant obtains actor token
-4. IBM Verify token exchange issues delegated JWT
-5. Vault accepts delegated JWT and returns API key
-6. Course Assistant calls Premium Enrollment Tool
-7. Tool validates API key
-8. Enrollment succeeds
-```
-
-Expected status:
-
-```text
-Premium enrollment completed
-```
-
-## What the application deliberately logs
-
-The demo displays safe claims and high-level flow stages. It must not log:
-
-- full access tokens,
-- client secrets,
-- Vault synchronization token,
-- API key value.
-
-## Runtime security story 
-
-> The Course Assistant does not own the downstream tool credential. IBM Verify establishes the human and agent delegation context. Vault independently verifies that the actor is a registered agent and that the subject policy, agent ceiling, and RAR all permit this exact secret read. Only then is the tool API key released just in time.
+**Stop checkpoint:** BAS-101 and PREM-801 succeed, PREM-901 is denied. Continue to Step 12 for lifecycle and negative tests.

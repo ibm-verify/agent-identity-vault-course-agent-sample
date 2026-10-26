@@ -1,3 +1,7 @@
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 ---
 version: 26.03
 
@@ -13,7 +17,8 @@ transmitter:
   issuer: "${NGROK_URL}"
   default_subjects: ALL
   event_types:
-    - "${SESSION_EVENT}"
+    - "urn:ietf:params:scim:event:prov:patch:full"
+    - "urn:ietf:params:scim:event:prov:create:full"
   one_stream_per_receiver: true
   runtime:
     enabled: true
@@ -21,7 +26,7 @@ transmitter:
       signing_keystore: jwks_keys
       default_signing_key: jwtsigner
     sign_poll_set: true
-    max_ssf_event_worker: 2
+    max_ssf_event_worker: 1
     max_set_push_worker: 1
     wait_ssf_event_timeout: 5s
     request_timeout: 20

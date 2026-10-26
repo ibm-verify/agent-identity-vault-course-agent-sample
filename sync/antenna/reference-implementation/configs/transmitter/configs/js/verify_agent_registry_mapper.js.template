@@ -1,36 +1,19 @@
+// Copyright IBM Corp. All Rights Reserved.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 importClass(logger);
 importClass(http);
-
-var outputData = {};
+var outputData = {ssfEvents: []};
 var inputData = JSON.parse(eventStr);
-
-logger.info("----- verify_agent_registry_mapper.js IBM VERIFY AGENT REGISTRY PAYLOAD -----");
-logger.info("Raw eventStr=" + eventStr);
-
 var tenantHost = "${VERIFY_TENANT_HOST}";
 var clientId = "${VERIFY_CLIENT_ID}";
 var clientSecret = "${VERIFY_CLIENT_SECRET}";
-var eventType = "${SESSION_EVENT}";
 var agentApiPath = "${VERIFY_AGENT_API_PATH}";
-
-function getPath(o, path) {
-  var cur = o;
-  for (var i = 0; i < path.length; i++) {
-    if (!cur || cur[path[i]] === undefined || cur[path[i]] === null) return "";
-    cur = cur[path[i]];
-  }
-  return cur;
-}
-
-function firstNonEmpty(values) {
-  for (var i = 0; i < values.length; i++) {
-    if (values[i] !== undefined && values[i] !== null && String(values[i]) !== "") return String(values[i]);
-  }
-  return "";
-}
-
-function toLower(v) { return String(v || "").toLowerCase(); }
-
+var subjectFormat = "${SUBJECT_FORMAT}";
+if (subjectFormat !== "scim" && subjectFormat !== "opaque") throw "Invalid SUBJECT_FORMAT";
+var PATCH = "urn:ietf:params:scim:event:prov:patch:full";
+var CREATE = "urn:ietf:params:scim:event:prov:create:full";
 function statusCode(status) {
   var m = String(status || "").match(/[0-9]+/);
   return m ? parseInt(m[0], 10) : 0;
@@ -41,12 +24,11 @@ function objectOrNull(v) {
 }
 
 function getAccessToken() {
-  var tokenUrl = "https://" + tenantHost + "/oauth2/token";
+  var tokenUrl = "${VERIFY_TOKEN_URL}";
   var body =
     "grant_type=client_credentials" +
     "&client_id=" + encodeURIComponent(clientId) +
-    "&client_secret=" + encodeURIComponent(clientSecret) +
-    "&scope=" + encodeURIComponent("openid");
+    "&client_secret=" + encodeURIComponent(clientSecret);
 
   var res = http.post({ headers: { "content-type": "application/x-www-form-urlencoded" } }, tokenUrl, body);
   logger.info("Verify token status=" + res.status);
@@ -72,7 +54,7 @@ function readAgent(agentId) {
   }, url);
 
   logger.info("Verify Agent GET status=" + res.status);
-  logger.info("Verify Agent GET body=" + res.body);
+
   var agentStatus = statusCode(res.status);
   if (agentStatus < 200 || agentStatus >= 300) {
     throw "Verify Agent read failed status=" + res.status + " body=" + res.body;
@@ -80,243 +62,48 @@ function readAgent(agentId) {
   return JSON.parse(res.body);
 }
 
-function normalizeOperation(action) {
-  var a = toLower(action);
-  if (a === "delete" || a === "deleted" || a === "remove" || a === "removed" || a === "deprovision" || a === "disabled") return "delete";
-  return "upsert";
-}
 
-function extractAgentId(e) {
-  return firstNonEmpty([
-    getPath(e, ["data", "id"]),
-    getPath(e, ["data", "agentId"]),
-    getPath(e, ["data", "agentid"]),
-    getPath(e, ["data", "resource", "id"]),
-    getPath(e, ["resource", "id"]),
-    e.id,
-    e.agentId,
-    e.agentid
-  ]);
-}
-
-function extractAgentName(e) {
-  return firstNonEmpty([
-    getPath(e, ["data", "displayName"]),
-    getPath(e, ["data", "display_name"]),
-    getPath(e, ["data", "name"]),
-    getPath(e, ["data", "resource", "displayName"]),
-    getPath(e, ["data", "resource", "name"]),
-    getPath(e, ["resource", "displayName"]),
-    getPath(e, ["resource", "name"]),
-    e.displayName,
-    e.name
-  ]);
-}
-
-function extractAction(e) {
-  return firstNonEmpty([
-    getPath(e, ["data", "action"]),
-    getPath(e, ["data", "operation"]),
-    getPath(e, ["action"]),
-    getPath(e, ["operation"])
-  ]);
-}
-
-function addIfPresent(arr, v) {
-  if (v !== undefined && v !== null && String(v) !== "") arr.push(String(v));
-}
-
-function hasAgentIdPurpose(item) {
-  if (!item) return false;
-  var purposes = item.purposes || [];
-  if (purposes && purposes.length) {
-    for (var x = 0; x < purposes.length; x++) {
-      if (toLower(purposes[x]) === "agent_id") return true;
-    }
-  }
-  if (toLower(item.purpose) === "agent_id") return true;
-  if (toLower(item.type) === "agent_id") return true;
-  return false;
-}
-
-function dedupe(ids) {
-  var seen = {};
+function mapModification(modified) {
+  if (typeof modified === "string") modified = JSON.parse(modified);
   var out = [];
-  for (var j = 0; j < ids.length; j++) {
-    if (ids[j] !== undefined && ids[j] !== null && String(ids[j]) !== "" && !seen[String(ids[j])]) {
-      seen[String(ids[j])] = true;
-      out.push(String(ids[j]));
-    }
+  function add(path, change) {
+    if (!/^(displayName|description|externalIds|owners|tags|status|oauthClients)$/.test(path))
+      throw "Unsupported modified attribute: " + path;
+    if (!change || !Object.prototype.hasOwnProperty.call(change, "new"))
+      throw "Modified attribute has no new value: " + path;
+    out.push({op:"replace", path:path, value:change.new});
   }
+  if (Array.isArray(modified)) {
+    modified.forEach(function(c) {
+      if (!c || typeof c !== "object") throw "Invalid modified entry";
+      if (c.name || c.attribute || c.path) add(c.name || c.attribute || c.path, c);
+      else Object.keys(c).forEach(function(k) { add(k,c[k]); });
+    });
+  } else if (modified && typeof modified === "object") {
+    Object.keys(modified).forEach(function(k) { add(k, modified[k]); });
+  } else throw "Missing or invalid data.modified";
+  if (!out.length) throw "Empty modification";
   return out;
 }
-
-function extractStringOAuthClientIds(agent) {
-  // IBM Verify management events commonly include data.oauth_clients as an array of OAuth client IDs only.
-  // That event form does not include purpose metadata. Prefer the enriched /v1.0/Agents response when available;
-  // use this as a fallback so raw management events can still create aliases.
-  var ids = [];
-  var arrays = [agent.oauth_clients, agent.oauthClients];
-  for (var a = 0; a < arrays.length; a++) {
-    var list = arrays[a];
-    if (!list || !list.length) continue;
-    for (var i = 0; i < list.length; i++) {
-      var item = list[i];
-      if (typeof item === "string") {
-        addIfPresent(ids, item);
-      }
-    }
+var d = inputData.data || {};
+if (inputData.event_type === "management" && d.resource === "ai_agent" && d.result === "success" &&
+    (d.action === "modified" || d.action === "created")) {
+  // Do not use the audit event ID as the resource ID.
+  var id = d.id || d.agentId || d.agentid;
+  var txn = inputData.txn || inputData.id;
+  if (!id || typeof id !== "string" || !txn) throw "Agent ID or audit transaction/event ID missing";
+  var subject = {format:subjectFormat, uri:"/Agents/"+encodeURIComponent(id)};
+  if (subjectFormat === "opaque") subject.id = id;
+  var set = {sub_id:subject, txn:String(txn), events:{}};
+  if (d.action === "modified") {
+    set.events[PATCH] = {data:{schemas:["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+      Operations:mapModification(d.modified)}};
+  } else {
+    var current = readAgent(id);
+    if (current.id !== id) throw "Agent GET ID mismatch";
+    set.events[CREATE] = {data:current};
   }
-  return dedupe(ids);
+  outputData.ssfEvents = [set];
 }
 
-function extractAgentIdOAuthClients(agent) {
-  var ids = [];
-  var arrays = [agent.oauthClients, agent.oauth_clients, agent.clients, agent.applications, agent.authMethods, agent.authenticationMethods];
-  for (var a = 0; a < arrays.length; a++) {
-    var list = arrays[a];
-    if (!list || !list.length) continue;
-    for (var i = 0; i < list.length; i++) {
-      var item = list[i];
-      if (!item || typeof item === "string") continue;
-      if (!hasAgentIdPurpose(item)) continue;
-      addIfPresent(ids, item.clientId);
-      addIfPresent(ids, item.client_id);
-      addIfPresent(ids, item.id);
-      addIfPresent(ids, item.applicationId);
-      addIfPresent(ids, item.application_id);
-      addIfPresent(ids, item.subject);
-    }
-  }
-  return dedupe(ids);
-}
-
-function extractRuntimeIdentifiers(agent) {
-  var ids = [];
-
-  // Always include the IBM Verify Agent Registry id so delete/no-op events can find any existing Vault entity.
-  addIfPresent(ids, agent.id);
-
-  // Preferred: only include OAuth client IDs when explicitly marked purpose=agent_id in the full Agent Registry API payload.
-  var agentIdClients = extractAgentIdOAuthClients(agent);
-  for (var c = 0; c < agentIdClients.length; c++) addIfPresent(ids, agentIdClients[c]);
-
-  // Fallback: raw management events may only contain data.oauth_clients=[clientId].
-  // Use these client IDs only when the full API enrichment did not provide purpose-aware agent_id clients.
-  if (agentIdClients.length === 0) {
-    var rawClientIds = extractStringOAuthClientIds(agent);
-    for (var r = 0; r < rawClientIds.length; r++) addIfPresent(ids, rawClientIds[r]);
-  }
-
-  return dedupe(ids);
-}
-
-function normalizeAgentResource(raw, fallbackId, fallbackName, fallbackStatus, fallbackRawOAuthClientIds) {
-  var agent = raw || {};
-  var id = firstNonEmpty([agent.id, agent.agentId, agent.agentid, fallbackId]);
-  var name = firstNonEmpty([agent.displayName, agent.display_name, agent.name, fallbackName, id]);
-  var status = firstNonEmpty([agent.status, fallbackStatus]);
-
-  // Purpose-aware agent_id clients are preferred when the enriched /v1.0/Agents/{id}
-  // response provides oauthClients[].purposes. However, the Verify management event
-  // arriving at /sources/push_src_1/events often contains only data.oauth_clients as
-  // a string array. Preserve those raw event client IDs even when enrichment succeeds,
-  // so the ACTIVE event payload can still create Vault aliases.
-  var agentIdClientIds = extractAgentIdOAuthClients(agent);
-  var rawOAuthClientIds = extractStringOAuthClientIds(agent);
-  fallbackRawOAuthClientIds = fallbackRawOAuthClientIds || [];
-  for (var f = 0; f < fallbackRawOAuthClientIds.length; f++) addIfPresent(rawOAuthClientIds, fallbackRawOAuthClientIds[f]);
-  rawOAuthClientIds = dedupe(rawOAuthClientIds);
-
-  var runtimeIds = [];
-  addIfPresent(runtimeIds, id);
-  for (var c = 0; c < agentIdClientIds.length; c++) addIfPresent(runtimeIds, agentIdClientIds[c]);
-  if (agentIdClientIds.length === 0) {
-    for (var r = 0; r < rawOAuthClientIds.length; r++) addIfPresent(runtimeIds, rawOAuthClientIds[r]);
-  }
-
-  return {
-    schemas: ["urn:ietf:params:scim:schemas:extension:ibm:2.0:Agent"],
-    resourceType: "Agent",
-    id: id,
-    displayName: name,
-    name: name,
-    description: String(agent.description || agent.purpose || ""),
-    status: String(status || ""),
-    owners: agent.owners || agent.owner || [],
-    tags: agent.tags || [],
-    oauthClients: agent.oauthClients || agent.oauth_clients || [],
-    externalIds: agent.externalIds || agent.external_ids || [],
-    rawOAuthClientIds: rawOAuthClientIds,
-    agentIdClientIds: agentIdClientIds,
-    runtimeIdentifiers: dedupe(runtimeIds)
-  };
-}
-
-var agentId = extractAgentId(inputData);
-var agentName = extractAgentName(inputData);
-var operation = normalizeOperation(extractAction(inputData));
-
-if (!agentId) {
-  logger.info("No IBM Verify Agent id found. No SSF event.");
-  outputData.ssfEvents = [];
-} else {
-  var rawEventAgent = objectOrNull(getPath(inputData, ["data", "resource"])) || objectOrNull(getPath(inputData, ["resource"])) || objectOrNull(getPath(inputData, ["data"])) || inputData;
-  var eventStatus = firstNonEmpty([getPath(inputData, ["data", "status"]), getPath(rawEventAgent, ["status"])]);
-  var eventRawOAuthClientIds = extractStringOAuthClientIds(rawEventAgent);
-  var rawAgent = rawEventAgent;
-
-  // For create/update events, enrich from the NHI Agent Registry API if the event only has an id.
-  // Do not enrich delete events because the source object may already be gone.
-  if (operation !== "delete") {
-    try {
-      rawAgent = readAgent(agentId);
-    } catch (x) {
-      logger.info("Verify Agent enrichment skipped/failed=" + x);
-    }
-  }
-
-  var agent = normalizeAgentResource(rawAgent, agentId, agentName, eventStatus, eventRawOAuthClientIds);
-
-  // Business rule: DRAFT/non-ACTIVE, or no OAuth client with purpose=agent_id, must not create a Vault agent.
-  // If an older Vault entity exists, emit delete to remove the Vault Agent Registry record and disable the entity.
-  if (operation !== "delete") {
-    var status = toLower(agent.status);
-    var hasAgentIdClient = agent.agentIdClientIds && agent.agentIdClientIds.length > 0;
-    var hasRawOAuthClientFallback = agent.rawOAuthClientIds && agent.rawOAuthClientIds.length > 0;
-    if (status && status !== "active") {
-      logger.info("Agent is not ACTIVE; emitting delete/no-op. status=" + agent.status);
-      operation = "delete";
-    } else if (!hasAgentIdClient && !hasRawOAuthClientFallback) {
-      logger.info("Agent has no oauthClients entry with purpose=agent_id and no raw oauth_clients fallback; emitting delete/no-op.");
-      operation = "delete";
-    } else if (!hasAgentIdClient && hasRawOAuthClientFallback) {
-      logger.info("Using raw management-event oauth_clients fallback because purpose-aware /v1.0/Agents data was unavailable or did not include agent_id purpose. rawOAuthClientIds=" + agent.rawOAuthClientIds.join(","));
-    }
-  }
-
-  var ssf = {
-    sub_id: {
-      format: "opaque",
-      id: agent.id,
-      verifyAgentId: agent.id
-    },
-    events: {}
-  };
-
-  ssf.events[eventType] = {
-    event_timestamp: Math.floor(Date.now() / 1000),
-    resource: agent,
-    operation: operation,
-    source: {
-      system: "ibm-verify",
-      event_source: "agent-registry",
-      api: "${VERIFY_AGENT_API_PATH}",
-      source_event: extractAction(inputData),
-      rule: "create only when status ACTIVE and oauthClients purpose contains agent_id; raw management-event oauth_clients is fallback"
-    }
-  };
-
-  logger.info("Generated Agent Registry sync event id=" + agent.id + " name=" + agent.displayName + " status=" + agent.status + " operation=" + operation + " agentIdClients=" + agent.agentIdClientIds.join(",") + " aliases=" + agent.runtimeIdentifiers.join(","));
-  outputData.ssfEvents = [ssf];
-}
+logger.info("Agent mapper emitted=" + outputData.ssfEvents.length + " subjectFormat=" + subjectFormat);

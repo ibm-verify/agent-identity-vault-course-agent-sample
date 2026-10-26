@@ -1,79 +1,102 @@
-# 3. Prerequisites and Values Worksheet
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-## 3.1 Required software
+SPDX-License-Identifier: Apache-2.0
+-->
 
-- IBM Verify SaaS tenant with administrative access.
-- Vault Enterprise **2.0.3 or later** with native AI Agent Registry and OAuth Resource Server features available.
-- A Vault environment where the KV v2 secrets engine is permitted for this use case.
-- Node.js 18 or later.
-- `curl`.
-- `jq`.
-- Vault CLI.
-- Postman (recommended for learning and troubleshooting).
+# 3. Prepare the workstation and workspace
 
-For the Antenna synchronization reference implementation only:
+**Purpose:** install the tools, unpack the sample and create the local settings file. No Verify applications, Vault policies, identities, secrets or Antenna streams are assumed to exist.
 
-- Docker + Docker Compose, or Colima + Docker CLI on macOS.
-- `ngrok`.
-- `envsubst` / gettext.
+## 3.1 Obtain the required products and accounts
 
-> **Prerequisite note — PKI-only Vault:** A cluster operating in PKI-only mode rejects API requests to non-PKI secrets-engine mounts. Because this cookbook stores an API key in KV v2, run the compatibility gate before doing any other setup. If KV is not permitted, use a non-PKI-only Vault environment for this API-key use case.
+| Requirement | How to prepare | Check before proceeding |
+|---|---|---|
+| IBM Verify tenant with IBM Agent Identity enabled | Obtain a tenant and administrator access from your IBM service administrator; sign in to its administration console | AI agents, application management and API access administration are available |
+| Human test account | Create it in Step 6 | You can complete interactive authentication |
+| Licensed Vault Enterprise build | Obtain the binary for your OS/CPU and an evaluation or purchased license with OAuth Resource Server and Agent Registry capabilities through your IBM/HashiCorp representative | Step 4 starts it and Step 5 activates the required feature |
+| Antenna container images | Obtain pull access to `icr.io/ibm-verify/ibm-verify-antenna-transmitter:26.03.0` and `icr.io/ibm-verify/ibm-verify-antenna-receiver:26.03.0` | Step 7 can pull both images |
+| ngrok account | Create an account at https://ngrok.com and obtain its authentication token | A public HTTPS tunnel can be started |
 
-## 3.2 Required IBM Verify permissions
+Product entitlement, a license file and tenant credentials are external inputs. The sample does not create a tenant or issue a product license. These checks must pass before the remaining setup can succeed.
 
-The administrator must be able to:
+## 3.2 Install workstation tools
 
-- Create users or use an existing test user.
-- Create an Agent Registry agent.
-- Create/associate OIDC applications.
-- Configure Token Exchange on an OIDC application.
-- Configure OIDC endpoint/introspection mappings.
-- Create Authorization Detail Types.
-- Create an API client for synchronization if Antenna needs to read full agent records.
+The protocol and application flow are independent of OS. The commands below use Bash. On Windows run them in WSL2 with Docker integration. On Linux use your distribution packages and the vendors' installers. Install Node.js with npm, Python 3, curl, jq, OpenSSL, gettext (`envsubst`), Docker Engine/Desktop with Compose, ngrok and the licensed Vault binary.
 
-## 3.3 Required Vault bootstrap permissions
+On macOS, install Homebrew from https://brew.sh if it is not installed, and follow the installer’s displayed PATH instructions. Then:
 
-An initial Vault administrator/root-equivalent credential is required only to:
-
-- Run the compatibility gate.
-- Activate/configure OAuth Resource Server support.
-- Create ACL policies.
-- Create a restricted synchronization token.
-- Enable/configure KV v2.
-- Store the initial demo secret.
-
-After bootstrap, the synchronization integration should use its restricted token; the Course Assistant runtime should use only the delegated JWT.
-
-## 3.4 Values worksheet
-
-Copy [VALUES-WORKSHEET.md](VALUES-WORKSHEET.md) and fill it in as you go.
-
-Do not copy IDs or URLs from screenshots. Screenshots show **where** to configure; the worksheet stores **your** values.
-
-## 3.5 Recommended names
-
-| Object | Recommended name |
-|---|---|
-| IBM Verify Agent | `Course Assistant` |
-| Actor OIDC application | `Course Assistant Runtime` |
-| Subject OIDC application | `Course Portal` |
-| Token Exchange OIDC application | `Course Vault Token Exchange` |
-| Vault OAuth profile | `course-verify` |
-| Vault audience | `vault-course-tools` |
-| Subject Vault policy | `course-tool-subject` |
-| Agent ceiling policy | `course-tool-ceiling` |
-| KV mount | `course-tools` |
-| Secret API path | `course-tools/data/premium-enrollment` |
-
-## 3.6 Before you continue
-
-You should have:
-
-```text
-[ ] IBM Verify admin access
-[ ] Vault Enterprise admin/root bootstrap access
-[ ] Node.js 18+
-[ ] curl + jq + Vault CLI
-[ ] Postman
-[ ] Antenna prerequisites only if using the reference synchronization path
+```bash
+brew install node python jq openssl@3 gettext ngrok
+export PATH="$(brew --prefix openssl@3)/bin:$(brew --prefix gettext)/bin:$PATH"
 ```
+
+Install Docker Desktop from https://www.docker.com/products/docker-desktop/, open it and wait for the engine to become ready. Docker Desktop supplies Compose. A configured Colima engine can also be used; select one engine for the entire lab.
+
+Download the licensed Vault binary matching your CPU, extract it to a private directory such as `~/uc3-tools/vault`, make it executable and add that directory to PATH. Put your license in a separate private file. Record its absolute path; do not copy it into the sample repository.
+
+```bash
+bash --version
+node --version
+npm --version
+python3 --version
+curl --version
+jq --version
+openssl version
+envsubst --version
+docker info
+docker compose version
+ngrok version
+vault version
+```
+
+**Expected:** every command runs; `docker info` shows a reachable server. Use Node.js 22 or a later supported LTS release. `vault version` must identify your Enterprise binary. A command-not-found error or unavailable Docker server must be resolved now.
+
+## 3.3 Extract and enter the sample
+
+Download the ZIP and extract it with your file manager. Open Terminal B and enter the extracted folder containing `README.md`, `app/`, `verify/`, `vault/` and `sync/`. For a ZIP downloaded to Downloads:
+
+```bash
+bash
+cd "$HOME/Downloads"
+unzip UC3_Repository_Updated_Verify_Vault_Sync.zip
+cd agent-identity-vault-course-agent-sample-main
+export UC3_ROOT="$PWD"
+umask 077
+mkdir -p .runtime
+chmod 700 .runtime
+cp lab.env.example lab.env
+chmod 600 lab.env
+```
+
+If the downloaded filename differs, substitute that filename in `unzip`. Keep Terminal B open throughout the setup. `UC3_ROOT` always means this extracted repository root.
+
+**Expected:** `test -f "$UC3_ROOT/app/package.json" && echo PASS` prints `PASS`.
+
+## 3.4 Fill the initial local settings
+
+Open `lab.env` in a text editor. Replace `REPLACE_TENANT_HOST` with the tenant hostname only, without `https://` or a trailing slash. Leave application/agent placeholders until Step 6. Generate a session secret:
+
+```bash
+python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
+```
+
+Copy that output into `SESSION_SECRET`. The API-key value in this sample is a dummy demonstration credential. Keep `PREMIUM_API_EXPECTED_KEY` unchanged for the first run so all steps use the same value. Set the licensed Vault path separately in Terminal A in Step 4. Do not source `app/.env`; it is an application configuration file, not a shell script.
+
+```bash
+source "$UC3_ROOT/lab.env"
+printf 'Tenant=%s\nVault=%s\nSecret path=%s\n' "$VERIFY_TENANT_HOST" "$VAULT_ADDR" "$VAULT_SECRET_API_PATH"
+```
+
+**Expected:** actual tenant hostname, `http://127.0.0.1:8200` and `course-tools/data/premium-enrollment`. No client secret is displayed.
+
+## Terminal plan
+
+| Terminal | Purpose | Keep running |
+|---|---|---|
+| A | Vault dev server | Throughout all tests |
+| B | Setup, curl, Docker and validation | Throughout setup |
+| C | ngrok HTTPS tunnel | Throughout synchronization tests |
+| D | Course Portal | During the browser demonstration |
+
+All setup commands run in Terminal B unless another terminal is specified. Proceed to **Step 4** only after the workstation checks pass.

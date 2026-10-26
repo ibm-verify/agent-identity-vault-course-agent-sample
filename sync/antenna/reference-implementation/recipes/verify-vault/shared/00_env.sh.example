@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# IBM Verify Agent Registry -> HashiCorp Vault Agent Registry sync lab.
+# Edit this file, then run: source scripts/00_env.sh
+
+export LAB_NAME="verify-vault-agent-registry"
+
+# On Mac, localhost works for host-side curl calls to the containers.
+export HOST_IP="localhost"
+
+# Fill this after you start ngrok. Example: https://abc-123.ngrok-free.app
+export NGROK_URL="CHANGEME_NGROK_HTTPS_URL"
+
+# IBM Verify tenant and service client that can read Agent Registry data.
+# Host only, no https:// prefix.
+export VERIFY_TENANT_HOST="CHANGEME.verify.ibmcloudsecurity.com"
+export VERIFY_CLIENT_ID="CHANGEME_VERIFY_CLIENT_ID"
+export VERIFY_CLIENT_SECRET="CHANGEME_VERIFY_CLIENT_SECRET"
+export VERIFY_AGENT_API_PATH="/v1.0/Agents"
+
+# Vault access.
+# VAULT_ADDR_HOST is used by scripts running on your Mac.
+# VAULT_ADDR_FROM_ANTENNA is used inside Antenna receiver container.
+export VAULT_ADDR_HOST="http://127.0.0.1:8200"
+export VAULT_ADDR_FROM_ANTENNA="http://host.docker.internal:8200"
+export VAULT_ADDR="$VAULT_ADDR_HOST"
+export VAULT_TOKEN="CHANGEME_VAULT_PROVISIONING_TOKEN"
+export VAULT_NAMESPACE=""
+
+# Registration ceiling policy; no direct entity ACL grant.
+export VAULT_POLICY="course-tool-ceiling"
+
+# Auth mount accessor used for entity aliases.
+# Root namespace: oauth-resource-server_root_<actual-profile-config-id>.
+export VAULT_MOUNT_ACCESSOR="CHANGEME_AUTH_MOUNT_ACCESSOR"
+
+# HashiCorp docs currently show ceiling_policies. Some early builds used ceiling_policy_identifiers.
+export VAULT_AGENT_REGISTRY_CEILING_FIELD="ceiling_policies"
+
+export TX_PORT="9044"
+export RX_PORT="9043"
+export PATCH_EVENT="urn:ietf:params:scim:event:prov:patch:full"
+export CREATE_EVENT="urn:ietf:params:scim:event:prov:create:full"
+
+export TX_CONTAINER="${LAB_NAME}-transmitter"
+export RX_CONTAINER="${LAB_NAME}-receiver"
+
+# Default opaque matches the working 26.03.0 integration.
+# This is not RFC 9967 SCIM-subject compliance.
+# Set the SAME value in both handlers through this one environment file.
+export SUBJECT_FORMAT="opaque"
+
+export VERIFY_ISSUER="https://${VERIFY_TENANT_HOST}/oauth2"
+export VAULT_AGENT_ACL_POLICY="course-tool-subject"

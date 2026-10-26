@@ -1,19 +1,25 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Vault Path Access",
   "type": "object",
-  "required": ["type", "path", "capabilities"],
-  "additionalProperties": false,
+  "required": [
+    "type",
+    "path",
+    "capabilities"
+  ],
   "properties": {
-    "type": { "const": "vault:path_access" },
-    "path": { "type": "string", "pattern": "^[A-Za-z0-9._/:-]+$" },
+    "type": {
+      "const": "vault:path_access"
+    },
+    "path": {
+      "const": "course-tools/data/premium-enrollment"
+    },
     "capabilities": {
       "type": "array",
-      "uniqueItems": true,
       "items": {
-        "type": "string",
-        "enum": ["read", "create", "update", "delete", "list", "sudo", "patch", "subscribe", "recover", "deny"]
-      }
+        "const": "read"
+      },
+      "minItems": 1,
+      "maxItems": 1
     }
-  }
+  },
+  "additionalProperties": false
 }

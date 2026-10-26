@@ -1,3 +1,9 @@
+<!--
+Copyright IBM Corp. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Security Notice
 
 This repository is a demonstration/reference implementation.

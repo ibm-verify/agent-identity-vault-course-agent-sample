@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-
 # Copyright IBM Corp. All Rights Reserved.
-# #
+#
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
-DIR=$(cd "$(dirname "$0")" && pwd); source "$DIR/_common.sh"; need_admin_token
-vault kv put course-tools/premium-enrollment api_key='course-premium-demo-key-2026'
-echo 'Stored matching demo API key in Vault.'
+: "${VAULT_ADDR:?}" "${VAULT_ADMIN_TOKEN:?}" "${PREMIUM_API_EXPECTED_KEY:?}"
+body=$(jq -nc --arg key "$PREMIUM_API_EXPECTED_KEY" '{data:{api_key:$key}}')
+curl --fail-with-body -sS -X POST -H "X-Vault-Token: $VAULT_ADMIN_TOKEN" -H 'Content-Type: application/json' --data "$body" "$VAULT_ADDR/v1/course-tools/data/premium-enrollment" > /dev/null
+echo 'PASS: expected dummy key stored'

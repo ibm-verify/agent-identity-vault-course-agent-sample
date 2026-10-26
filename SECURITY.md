@@ -1,3 +1,9 @@
+<!--
+Copyright IBM Corp. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Security Policy
 
 All versions, unless otherwise stated, are supported with security updates.

@@ -1,28 +1,11 @@
-# Runnable Course Portal Demo
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-This folder contains the sample application used after IBM Verify and Vault have passed the smoke test.
+SPDX-License-Identifier: Apache-2.0
+-->
 
-## What it demonstrates
+# Course Portal
 
-- Human sign-in with Authorization Code + PKCE.
-- Course Assistant actor token by Client Credentials.
-- RFC 8693 token exchange through the `Course Vault Token Exchange` OIDC application.
-- Delegated JWT presented directly to Vault.
-- Premium tool API key read from Vault and supplied to the protected tool.
-- Standard course path that does not require the protected credential.
+Complete [the setup guide](../SETUP-GUIDE.md) before starting the application. Step 9 generates `app/.env` from the local lab settings and verifies dependencies/tests. Step 11 starts the portal with `npm start`.
 
-## Run
-
-Follow the main cookbook first. Then:
-
-```bash
-cp .env.example .env
-# edit .env
-npm ci
-npm test
-npm start
-```
-
-Open `http://localhost:4000`.
-
-Do not place Vault root/admin or synchronization tokens in `.env`.
+The portal uses only runtime OAuth credentials. It does not use the Vault administrator or synchronization token.

@@ -1,146 +1,60 @@
-# 10. Smoke-Test Tokens and Vault Before Running the Course Portal
+<!--
+Copyright IBM Corp. All Rights Reserved.
 
-Do not start the UI until this phase works. This isolates IBM Verify/Vault configuration from application code.
+SPDX-License-Identifier: Apache-2.0
+-->
 
-## Step 10.1 — Get actor token
+# 10. Validate token issuance and the first JWT credential read
 
-```bash
-source verify/scripts/00_env.example.sh   # copy/edit as 00_env.sh first
-bash verify/scripts/01_get_actor_token.sh
-```
+**Purpose:** prove each remote authorization boundary separately before the browser demonstration. Keep the portal stopped while the sign-in helper owns port 4000.
 
-Decode:
-
-```bash
-bash verify/scripts/02_decode_jwt.sh "$ACTOR_TOKEN"
-```
-
-Check:
-
-```text
-client_id = Course Assistant Runtime client
-sub       = actor runtime identity
-iss       = your Verify issuer
-```
-
-
-## Step 10.2 — Get subject token
-
-Use Authorization Code + PKCE from the Course Portal application or Postman/browser helper.
-
-The Postman collection contains a documentation request describing the Authorization Code flow; the runnable app performs this flow automatically.
-
-Decode the subject access token and verify:
-
-```text
-sub     = human user
-may_act = correlates with Course Assistant actor token
-```
-
-## Step 10.3 — Create the human subject identity in Vault
-
-Agent synchronization covers the Course Assistant, not the human test user. For this demo, create the human Vault Identity entity once after you know the subject token `sub`.
+## 10.1 Authenticate the human with PKCE
 
 ```bash
-export SUBJECT_TOKEN_SUB="<value-of-sub-from-subject-token>"
-export VERIFY_ISSUER="https://<tenant>/oauth2"
-export VAULT_TOKEN="<bootstrap-admin-token>"
-source vault/.oauth-runtime.env
-bash vault/scripts/10_create_subject_identity.sh
+cd "$UC3_ROOT"
+source lab.env
+python3 verify/scripts/07_login_subject.py
+python3 verify/scripts/06_check_jwt_contract.py subject .runtime/subject.token
 ```
 
-This creates/updates:
+Sign in in the opened browser as Course Learner and complete any required consent. The helper validates OAuth state, exchanges the code with the matching PKCE verifier, writes the token privately and releases port 4000.
 
-```text
-Human subject Vault Identity entity
-+ OAuth alias with name/external_id matching SUBJECT_TOKEN.sub
-+ OAuth alias issuer matching delegated JWT iss
-+ course-tool-subject baseline policy
-```
+**Expected:** the browser returns to `http://localhost:4000/callback`; the terminal reports a saved token and `PASS: subject claim contract`. The subject must identify the human. A redirect error requires checking exact hostname, scheme, port and path. If the helper times out, run it again and use the new authorization URL.
 
-Vault does not permit adding/changing alias `issuer` after creation. If an older alias has empty `issuer` or `external_id`, follow the delete-and-recreate repair in [13A-VALIDATED-SETUP-TROUBLESHOOTING.md](13A-VALIDATED-SETUP-TROUBLESHOOTING.md).
-
-
-## Step 10.4 — Perform RFC 8693 token exchange
-
-Use:
+## 10.2 Authenticate the agent and perform both exchanges
 
 ```bash
-export SUBJECT_TOKEN="<subject-access-token>"
-export ACTOR_TOKEN="<actor-access-token>"
-
 bash verify/scripts/03_exchange_obo_token.sh
 ```
 
-The request includes:
+The helper obtains a fresh actor token, validates its identity, sends the task exchange, checks its output, and sends the credential exchange. It stops on a failed HTTP call or failed claim check, and clears previous output token files before issuance so stale files cannot masquerade as success.
 
-```text
-grant_type = urn:ietf:params:oauth:grant-type:token-exchange
-subject_token
-subject_token_type = access_token
-actor_token
-actor_token_type = access_token
-requested_token_type = access_token
-authorization_details = [{vault:path_access ...}]
-```
+| Output | Required observed claims |
+|---|---|
+| Actor | `sub=VERIFY_AGENT_ID`, `client_id=ACTOR_CLIENT_ID` |
+| Task | Human `sub`, immediate `act.sub=VERIFY_AGENT_ID`, granted PREM-801 task RAR |
+| Credential | `sub=VERIFY_AGENT_ID`, immediate `act.sub=VERIFY_AGENT_ID`, exact Vault read RAR |
 
-The client authenticating this request is the **Course Vault Token Exchange OIDC application**.
+**Expected:** all three `PASS` checks and a positive remaining lifetime. The helper prints selected claims, never the encoded tokens. Local claim inspection does not verify signatures: Verify validates incoming tokens at issuance and Vault validates the presented credential JWT.
 
+If the human token has expired, repeat Step 10.1, then rerun the exchange helper. Do not create a human Vault alias when a credential token has the wrong subject; fix its mapping instead.
 
-## Step 10.5 — Decode delegated JWT
+## 10.3 Read the secret directly with the Verify JWT
 
 ```bash
-bash verify/scripts/02_decode_jwt.sh "$DELEGATED_TOKEN"
+python3 verify/scripts/06_check_jwt_contract.py credential .runtime/credential.token
+export CREDENTIAL_TOKEN="$(cat .runtime/credential.token)"
+code=$(curl -sS -o .runtime/runtime-read.json -w '%{http_code}' \
+ -H "X-Vault-Token: $CREDENTIAL_TOKEN" \
+ "$VAULT_ADDR/v1/course-tools/data/premium-enrollment")
+printf 'Vault runtime HTTP status=%s\n' "$code"
+test "$code" = 200
+jq -e --arg key "$PREMIUM_API_EXPECTED_KEY" '.data.data.api_key==$key' .runtime/runtime-read.json
+rm .runtime/runtime-read.json
 ```
 
-Verify:
+**Expected:** HTTP 200 and `true`. No Vault login is performed. The Verify JWT is presented directly in `X-Vault-Token`; it is not the Vault root or synchronization token. The namespace is still root.
 
-```text
-[ ] sub identifies human subject
-[ ] actor context identifies Course Assistant
-[ ] aud contains vault-course-tools
-[ ] authorization_details contains exact path course-tools/data/premium-enrollment
-[ ] capabilities contains read
-```
+A 403 requires checking the current JWT, exact issuer, permanent alias binding, entity enabled state, subject ACL, registration ceiling and RAR. Equal-subject/actor processing must succeed on the actual licensed build; retain the real validation error if it does not. Do not suppress `act` to hide a failed check.
 
-Do not continue if these are wrong.
-
-## Step 10.6 — Read Vault secret using the delegated JWT directly
-
-```bash
-export DELEGATED_TOKEN="<token>"
-bash vault/scripts/08_read_secret_with_delegated_jwt.sh
-```
-
-Conceptually:
-
-```http
-GET /v1/course-tools/data/premium-enrollment
-X-Vault-Token: <IBM_VERIFY_DELEGATED_JWT>
-```
-
-Vault should evaluate:
-
-- Verify issuer/JWKS,
-- audience,
-- subject identity and baseline policy,
-- actor identity,
-- actor Agent Registry registration,
-- actor ceiling policy,
-- RAR exact path/capability.
-
-
-## STOP CHECKPOINT
-
-```text
-[ ] Actor token works
-[ ] Subject token works
-[ ] may_act validation succeeds
-[ ] Token exchange returns delegated JWT
-[ ] delegated aud matches Vault audience
-[ ] delegated authorization_details are correct
-[ ] Vault accepts delegated JWT
-[ ] Vault returns the api_key field
-```
-
-Only now start the Course Portal.
+**Stop checkpoint:** human login, actor token, task exchange, credential exchange and JWT credential read all pass. Continue to Step 11.

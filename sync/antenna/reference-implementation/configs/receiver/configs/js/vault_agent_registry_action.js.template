@@ -1,22 +1,113 @@
+// Copyright IBM Corp. All Rights Reserved.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 importClass(logger);
 importClass(http);
 
 logger.info("----- vault_agent_registry_action.js IBM VERIFY AGENT -> VAULT AGENT REGISTRY -----");
-logger.info("eventStr=" + eventStr);
+
 
 var wrapper = JSON.parse(eventStr);
 var claims = wrapper.claimsJson ? wrapper.claimsJson : wrapper;
 
-var eventType1 = "${SESSION_EVENT}";
-var eventType2 = "https://schemas.ibm.com/verify/event-type/agent-sync";
-var evt = null;
+var tenantHost = "${VERIFY_TENANT_HOST}";
+var clientId = "${VERIFY_CLIENT_ID}";
+var clientSecret = "${VERIFY_CLIENT_SECRET}";
+var agentApiPath = "${VERIFY_AGENT_API_PATH}";
+function statusCode(status) {
+  var m = String(status || "").match(/[0-9]+/);
+  return m ? parseInt(m[0], 10) : 0;
+}
 
-if (claims.events) {
-  evt = claims.events[eventType1] || claims.events[eventType2];
+function objectOrNull(v) {
+  return (v && typeof v === "object") ? v : null;
+}
+
+function getAccessToken() {
+  var tokenUrl = "${VERIFY_TOKEN_URL}";
+  var body =
+    "grant_type=client_credentials" +
+    "&client_id=" + encodeURIComponent(clientId) +
+    "&client_secret=" + encodeURIComponent(clientSecret);
+
+  var res = http.post({ headers: { "content-type": "application/x-www-form-urlencoded" } }, tokenUrl, body);
+  logger.info("Verify token status=" + res.status);
+  var tokenStatus = statusCode(res.status);
+  if (tokenStatus < 200 || tokenStatus >= 300) {
+    throw "Verify token failed status=" + res.status + " body=" + res.body;
+  }
+  return JSON.parse(res.body).access_token;
+}
+
+function readAgent(agentId) {
+  var token = getAccessToken();
+  var basePath = agentApiPath || "/v1.0/Agents";
+  if (basePath.charAt(0) !== "/") basePath = "/" + basePath;
+  var url = "https://" + tenantHost + basePath + "/" + encodeURIComponent(agentId);
+  var res = http.get({
+    headers: {
+      "Authorization": "Bearer " + token,
+      "Accept": "application/scim+json",
+      "Content-Type": "application/scim+json",
+      "x-forwarded-host": tenantHost
+    }
+  }, url);
+
+  logger.info("Verify Agent GET status=" + res.status);
+
+  var agentStatus = statusCode(res.status);
+  if (agentStatus < 200 || agentStatus >= 300) {
+    throw "Verify Agent read failed status=" + res.status + " body=" + res.body;
+  }
+  return JSON.parse(res.body);
+}
+
+var subjectFormat = "${SUBJECT_FORMAT}";
+if (subjectFormat !== "scim" && subjectFormat !== "opaque") throw "Invalid SUBJECT_FORMAT";
+var PATCH = "urn:ietf:params:scim:event:prov:patch:full";
+var CREATE = "urn:ietf:params:scim:event:prov:create:full";
+var evt = null;
+if (typeof claims === "string") claims = JSON.parse(claims);
+var incoming = claims.events && (claims.events[PATCH] || claims.events[CREATE]);
+if (incoming) {
+  var subject = claims.sub_id || {};
+  if (subject.format !== subjectFormat || !/^\/Agents\/[^/]+$/.test(subject.uri || "") || !claims.txn)
+    throw "Invalid SCIM subject/transaction";
+  var verifyId = decodeURIComponent(subject.uri.slice(8));
+  if (subjectFormat === "opaque" && subject.id !== verifyId) throw "Opaque ID and URI mismatch";
+  if (claims.events[PATCH]) {
+    var patch = incoming.data || {};
+    if (!patch.schemas || patch.schemas.length !== 1 ||
+        patch.schemas[0] !== "urn:ietf:params:scim:api:messages:2.0:PatchOp" ||
+        !Array.isArray(patch.Operations) || !patch.Operations.length) throw "Invalid PatchOp";
+    patch.Operations.forEach(function(p) {
+      if (p.op !== "replace" || !/^(displayName|description|externalIds|owners|tags|status|oauthClients)$/.test(p.path) ||
+          !Object.prototype.hasOwnProperty.call(p,"value")) throw "Invalid replace operation";
+    });
+  }
+  var current = readAgent(verifyId); // A failed read throws; never interpret failure as absence.
+  if (current.id !== verifyId) throw "Agent GET ID mismatch";
+  var validStates = ["ACTIVE", "SUSPENDED", "DRAFT", "UNDER_REVIEW"];
+  if (validStates.indexOf(current.status) < 0) throw "Unknown/missing agent status; refusing Vault changes";
+  var associations = current.oauthClients || [];
+  if (!Array.isArray(associations)) throw "Invalid oauthClients response";
+  var eligible = associations.filter(function(c) {
+    return c && typeof c === "object" && c.clientId && Array.isArray(c.purposes) && c.purposes.indexOf("agent_id") >= 0;
+  }).map(function(c) { return String(c.clientId); });
+  if (eligible.length > 1) throw "This recipe supports one agent_id client; rotation needs alias reconciliation";
+  logger.info("Eligibility status=" + current.status + " agent_id_clients=" + eligible.length);
+  current.resourceType = "Agent";
+  current.agentIdClientIds = eligible;
+  if (current.status === "ACTIVE" && eligible.length === 0) {
+    logger.info("SKIP ACTIVE agent: no explicit agent_id-purpose client; no Vault writes");
+  } else {
+    evt = {resource:current, operation: current.status === "ACTIVE" ? "upsert" : "delete"};
+  }
 }
 
 if (!evt) {
-  logger.info("No supported event found. Skipping.");
+  logger.info("No applicable action: unsupported event or ineligible ACTIVE agent. Skipping.");
 } else {
   var resource = evt.resource || evt.agent || {};
   var resourceType = String(resource.resourceType || (resource.meta && resource.meta.resourceType) || "Agent");
@@ -33,16 +124,12 @@ if (!evt) {
     var vaultToken = "${VAULT_TOKEN}";
     var vaultPolicy = "${VAULT_POLICY}";
     var mountAccessor = "${VAULT_MOUNT_ACCESSOR}";
-    var verifyIssuer = "${VERIFY_ISSUER}";
     var ceilingField = "${VAULT_AGENT_REGISTRY_CEILING_FIELD}";
     var vaultNamespace = "${VAULT_NAMESPACE}";
 
     if (!vaultAddr || vaultAddr.indexOf("${") === 0) vaultAddr = "${VAULT_ADDR}";
     if (!ceilingField || ceilingField.indexOf("${") === 0) ceilingField = "ceiling_policies";
     if (!vaultNamespace || vaultNamespace.indexOf("${") === 0) vaultNamespace = "";
-    if (!verifyIssuer || verifyIssuer.indexOf("${") === 0 || verifyIssuer.indexOf("CHANGEME") >= 0) {
-      throw "VERIFY_ISSUER is required to create OAuth aliases with issuer/external_id.";
-    }
 
     function safeName(v) {
       return String(v || "").replace(/[^a-zA-Z0-9._-]/g, "-");
@@ -61,83 +148,10 @@ if (!evt) {
 
     // Vault Identity permits only one alias per entity for a given mount_accessor.
     // Therefore we choose exactly ONE primary runtime alias.
-    // Priority: purpose-aware agent_id client -> raw management-event oauth_clients fallback -> explicit client fields -> non-agent runtime id -> agent id fallback.
+    // The explicit agent_id association gates eligibility; alias identity is the permanent AgentID.
     function getRuntimeAliases() {
-      function push(out, v) {
-        if (v !== undefined && v !== null && String(v) !== "") out.push(String(v));
-      }
-      function firstUnique(list) {
-        var seen = {};
-        for (var i = 0; i < list.length; i++) {
-          var v = String(list[i] || "");
-          if (!v || seen[v]) continue;
-          seen[v] = true;
-          return v;
-        }
-        return "";
-      }
-
-      var candidates = [];
-
-      // Preferred: mapper provides purpose-aware oauthClients where purposes contains agent_id.
-      var agentIdClients = resource.agentIdClientIds || resource.agent_id_client_ids || [];
-      if (agentIdClients && agentIdClients.length) {
-        for (var aic = 0; aic < agentIdClients.length; aic++) push(candidates, agentIdClients[aic]);
-      }
-
-      // Fallback: raw management event data.oauth_clients only contains client id strings.
-      var rawIds = resource.rawOAuthClientIds || resource.raw_oauth_client_ids || resource.oauth_client_ids || [];
-      if (rawIds && rawIds.length) {
-        for (var ric = 0; ric < rawIds.length; ric++) push(candidates, rawIds[ric]);
-      }
-
-      // Object-style oauth clients with purpose=agent_id.
-      var arrays = [resource.oauthClients, resource.oauth_clients, resource.clients, resource.applications, resource.authMethods, resource.authenticationMethods];
-      for (var arr = 0; arr < arrays.length; arr++) {
-        var list = arrays[arr];
-        if (!list || !list.length) continue;
-        for (var j = 0; j < list.length; j++) {
-          var item = list[j] || {};
-          if (typeof item === "string") { push(candidates, item); continue; }
-          var hasPurpose = false;
-          var purposes = item.purposes || [];
-          if (purposes && purposes.length) {
-            for (var pp = 0; pp < purposes.length; pp++) {
-              if (String(purposes[pp]).toLowerCase() === "agent_id") hasPurpose = true;
-            }
-          }
-          if (String(item.purpose || "").toLowerCase() === "agent_id") hasPurpose = true;
-          if (!hasPurpose) continue;
-          push(candidates, item.clientId);
-          push(candidates, item.client_id);
-          push(candidates, item.id);
-          push(candidates, item.applicationId);
-          push(candidates, item.application_id);
-          push(candidates, item.subject);
-        }
-      }
-
-      push(candidates, resource.clientId);
-      push(candidates, resource.client_id);
-      push(candidates, evt.runtime_subject);
-      push(candidates, resource.runtimeSubject);
-      push(candidates, resource.runtime_subject);
-      push(candidates, resource.subject);
-
-      var ids = resource.runtimeIdentifiers || resource.runtime_identifiers || [];
-      if (ids && ids.length) {
-        for (var ri = 0; ri < ids.length; ri++) {
-          // Avoid choosing the Verify Agent ID if a real OAuth client id is available.
-          if (String(ids[ri]) !== String(agentId)) push(candidates, ids[ri]);
-        }
-      }
-
-      // Last fallback only; useful when no OAuth client id is available.
-      push(candidates, agentId);
-
-      var chosen = firstUnique(candidates);
-      if (!chosen) return [];
-      return [chosen];
+      // The association gates eligibility; the alias is the permanent registry ID.
+      return [agentId];
     }
 
     function headers() {
@@ -152,8 +166,8 @@ if (!evt) {
     function vaultGet(path) {
       var res = http.get({ headers: headers() }, vaultAddr + "/v1/" + path);
       logger.info("Vault GET " + path + " status=" + res.status + " body=" + res.body);
-      if (res.status < 200 || res.status >= 300) {
-        throw "Vault GET failed path=" + path + " status=" + res.status + " body=" + res.body;
+      if (statusCode(res.status) < 200 || statusCode(res.status) >= 300) {
+        var err = new Error("Vault GET failed path=" + path + " status=" + res.status); err.status = statusCode(res.status); err.responseBody = res.body; throw err;
       }
       return res.body ? JSON.parse(res.body) : {};
     }
@@ -161,8 +175,8 @@ if (!evt) {
     function vaultPost(path, body) {
       var res = http.post({ headers: headers() }, vaultAddr + "/v1/" + path, JSON.stringify(body || {}));
       logger.info("Vault POST " + path + " status=" + res.status + " body=" + res.body);
-      if (res.status < 200 || res.status >= 300) {
-        throw "Vault POST failed path=" + path + " status=" + res.status + " body=" + res.body;
+      if (statusCode(res.status) < 200 || statusCode(res.status) >= 300) {
+        var err = new Error("Vault POST failed path=" + path + " status=" + res.status); err.status = statusCode(res.status); err.responseBody = res.body; throw err;
       }
       return res.body ? JSON.parse(res.body) : {};
     }
@@ -182,7 +196,7 @@ if (!evt) {
       }
 
       logger.info("Vault DELETE " + path + " status=" + res.status + " body=" + res.body);
-      if (res.status < 200 || res.status >= 300) {
+      if (statusCode(res.status) < 200 || statusCode(res.status) >= 300) {
         throw "Vault DELETE failed path=" + path + " status=" + res.status + " body=" + res.body;
       }
       return res.body ? JSON.parse(res.body) : {};
@@ -196,8 +210,8 @@ if (!evt) {
         });
         return lookup && lookup.data ? String(lookup.data.id || "") : "";
       } catch (e) {
-        logger.info("Entity lookup by alias failed alias=" + aliasName + " error=" + e);
-        return "";
+        if (e.status === 404) return "";
+        throw e;
       }
     }
 
@@ -206,7 +220,7 @@ if (!evt) {
         var existing = vaultGet("identity/entity/name/" + encodeURIComponent(entityName));
         if (existing && existing.data && existing.data.id) return existing.data;
       } catch (e) {
-        logger.info("Entity not found by name=" + entityName + " error=" + e);
+        if (e.status !== 404) throw e;
       }
       return null;
     }
@@ -216,7 +230,16 @@ if (!evt) {
         var reg = vaultGet("agent-registry/registration/entity-id/" + encodeURIComponent(entityId));
         if (reg && reg.data && reg.data.id) return reg.data;
       } catch (e) {
-        logger.info("Agent Registry record not found for entity=" + entityId + " error=" + e);
+        if (e.status === 404) return null;
+        // Some Enterprise builds report an absent registration as this exact HTTP 400.
+        // Other 400 responses remain errors and must never be treated as absence.
+        if (e.status === 400) {
+          var body;
+          try { body = JSON.parse(e.responseBody || "{}"); } catch (_) { body = {}; }
+          if (Array.isArray(body.errors) && body.errors.length === 1 &&
+              body.errors[0] === "agent for provided entity id does not exist") return null;
+        }
+        throw e;
       }
       return null;
     }
@@ -256,9 +279,8 @@ if (!evt) {
         vaultPost("identity/entity-alias", {
           name: alias,
           canonical_id: entityId,
-          mount_accessor: mountAccessor,
-          issuer: verifyIssuer,
-          external_id: alias,
+          issuer: "${VERIFY_ISSUER}",
+          external_id: agentId,
           custom_metadata: {
             source: "ibm-verify-antenna",
             resource_type: "Agent",
@@ -284,6 +306,7 @@ if (!evt) {
     }
 
     function disableEntityAndDeleteRegistry(entityId) {
+      vaultPost("identity/entity/id/" + encodeURIComponent(entityId), {disabled:true});
       var existingReg = getRegistrationByEntityId(entityId);
       if (existingReg && existingReg.id) {
         vaultDelete("agent-registry/registration/id/" + encodeURIComponent(existingReg.id));
@@ -305,6 +328,8 @@ if (!evt) {
       logger.info("Entity disabled entity=" + entityId + " verifyAgentId=" + agentId);
     }
 
+    if (!vaultPolicy || !"${VAULT_AGENT_ACL_POLICY}" || !"${VERIFY_ISSUER}" ||
+        "${VERIFY_ISSUER}".indexOf("${") === 0) throw "Missing UC3 identity/policy configuration";
     logger.info("operation=" + operation + " verifyAgentId=" + agentId + " verifyAgentName=" + agentName);
 
     var aliases = getRuntimeAliases();
@@ -313,9 +338,6 @@ if (!evt) {
     if (operation === "delete" || operation === "disable" || operation === "disabled") {
       logger.info("DELETE FLOW START");
       var deleteEntityId = "";
-      for (var di = 0; di < aliases.length && !deleteEntityId; di++) {
-        deleteEntityId = lookupEntityIdByAlias(aliases[di]);
-      }
 
       if (!deleteEntityId) {
         var deleteEntityName = "verify-agent-" + safeName(agentId);
@@ -336,11 +358,16 @@ if (!evt) {
       var entityName = "verify-agent-" + safeName(agentId);
       var entity = getEntityByName(entityName);
       var entityId = entity ? entity.id : "";
+      // Rotation must not leave a previously authorized client alias active.
+      if (entity && entity.aliases) entity.aliases.forEach(function(a) {
+        if (a.mount_accessor === mountAccessor && aliases.indexOf(a.name) < 0)
+          throw "Stale runtime alias found; reconcile aliases before re-enabling";
+      });
 
       if (!entityId) {
         var createdEntity = vaultPost("identity/entity", {
           name: entityName,
-          policies: [],
+          policies: ["${VAULT_AGENT_ACL_POLICY}"],
           disabled: false,
           metadata: {
             source: "ibm-verify-antenna",
@@ -356,7 +383,7 @@ if (!evt) {
       } else {
         vaultPost("identity/entity/id/" + encodeURIComponent(entityId), {
           name: entityName,
-          policies: [],
+          policies: ["${VAULT_AGENT_ACL_POLICY}"],
           disabled: false,
           metadata: {
             source: "ibm-verify-antenna",

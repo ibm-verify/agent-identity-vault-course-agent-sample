@@ -8,7 +8,7 @@ set -euo pipefail
 DIR=$(cd "$(dirname "$0")" && pwd); ROOT=$(cd "$DIR/.." && pwd)
 source "$DIR/_common.sh"; need_admin_token
 : "${VERIFY_ISSUER:?export VERIFY_ISSUER, e.g. https://tenant/oauth2}"
-: "${VERIFY_JWKS_URI:=${VERIFY_ISSUER%/}/jwks}"
+: "${VERIFY_JWKS_URI:?Obtain jwks_uri from the discovery document in Step 5}"
 : "${VAULT_AUDIENCE:=vault-course-tools}"
 : "${VAULT_OAUTH_PROFILE:=course-verify}"
 TMP=$(mktemp)

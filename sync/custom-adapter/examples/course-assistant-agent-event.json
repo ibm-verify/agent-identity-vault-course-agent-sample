@@ -1,8 +1,15 @@
 {
-  "verifyAgentId": "<VERIFY_AGENT_ID>",
-  "displayName": "Course Assistant",
-  "status": "ACTIVE",
-  "owner": "<OWNER_OR_TEAM>",
-  "runtimeOAuthClientId": "<ACTOR_CLIENT_ID>",
-  "runtimeActorIdentity": "<ACTOR_TOKEN_SUB_OR_EXPECTED_ALIAS>"
+  "id": "example-audit-id",
+  "event_type": "management",
+  "data": {
+    "resource": "ai_agent",
+    "id": "REPLACE_WITH_REAL_AGENT_UUID",
+    "action": "modified",
+    "result": "success",
+    "modified": {
+      "description": {
+        "new": "Course Assistant description changed"
+      }
+    }
+  }
 }

@@ -1,3 +1,9 @@
+<!--
+Copyright IBM Corp. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Supplied Reference Screenshots
 
 These images are extracted from the setup PDF supplied with this task and are included only to help locate similar configuration areas.

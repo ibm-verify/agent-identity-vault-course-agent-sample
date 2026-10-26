@@ -2,9 +2,10 @@
   "issuer_id": "__VERIFY_ISSUER__",
   "use_jwks": true,
   "jwks_uri": "__VERIFY_JWKS_URI__",
-  "audiences": ["__VAULT_AUDIENCE__"],
   "user_claim": "sub",
-  "supported_algorithms": ["RS256"],
+  "supported_algorithms": [
+    "RS256"
+  ],
   "jwt_type": "access_token",
   "clock_skew_leeway": 60,
   "optional_authorization_details": false,
