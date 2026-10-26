@@ -6,6 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 
 # IBM Verify + HashiCorp Vault — Secure Course Agent Tool Credentials
 
+| ⚠️ General availability ⚠️ |
+| :--- |
+| This demonstration uses generally available IBM Verify Agent Identity capabilities. Availability may vary by data center and tenant rollout. Confirm that the required capabilities are enabled in your tenant before starting |
+
 An end-to-end reference implementation for securing an AI agent’s tool credential using **IBM Agent Identity in IBM Verify** and **HashiCorp Vault native agent authorization**.
 
 A Course Assistant acts on behalf of a signed-in user, obtains authorization for a course-enrollment task, and retrieves the required tool credential from Vault using its **permanent AgentID**.
